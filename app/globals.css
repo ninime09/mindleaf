@@ -1,49 +1,428 @@
+/* ===========================================================
+   Mindleaf — misty blue glass, editorial calm
+   =========================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Base — misty blue-gray */
+  --bg-0: oklch(0.985 0.008 235);
+  --bg-1: oklch(0.97 0.012 235);
+  --bg-2: oklch(0.955 0.016 235);
+
+  /* Ink */
+  --ink-900: oklch(0.22 0.012 260);
+  --ink-700: oklch(0.38 0.012 260);
+  --ink-600: oklch(0.46 0.012 260);
+  --ink-500: oklch(0.55 0.012 260);
+  --ink-400: oklch(0.66 0.010 260);
+  --ink-300: oklch(0.78 0.008 250);
+  --ink-200: oklch(0.88 0.008 245);
+
+  /* Accent — soft misty blue (dynamically overridden via Tweaks) */
+  --accent: oklch(0.70 0.09 240);
+  --accent-deep: oklch(0.55 0.10 245);
+  --accent-soft: oklch(0.88 0.04 240);
+  --accent-wash: oklch(0.95 0.02 235);
+
+  /* Paper — pure-ish surface for on-dark text */
+  --bg-paper: oklch(0.995 0.002 240);
+
+  /* Glass tokens */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-bg-weak: rgba(255, 255, 255, 0.38);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-border-outer: rgba(23, 42, 82, 0.08);
+  --glass-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 0.5px rgba(23, 42, 82, 0.06),
+    0 8px 24px -12px rgba(23, 42, 82, 0.12),
+    0 24px 48px -24px rgba(23, 42, 82, 0.08);
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-2xl: 28px;
+  --r-pill: 999px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Type — English default; Chinese variant swapped at runtime via Tweaks/lang.
+     next/font injects --font-inter / --font-instrument-serif / --font-noto-serif-sc / --font-jetbrains-mono. */
+  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
+  --font-ui: var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
 
-html {
-  height: 100%;
-}
-
-html,
 body {
-  max-width: 100vw;
+  font-family: var(--font-ui);
+  color: var(--ink-900);
+  background: var(--bg-0);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  letter-spacing: -0.005em;
+  min-height: 100vh;
   overflow-x: hidden;
 }
 
-body {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ============================================================
+   Ambient background — soft blue aurora
+   ============================================================ */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(1200px 800px at 10% 0%, oklch(0.93 0.05 240 / 0.9), transparent 60%),
+    radial-gradient(1000px 700px at 90% 20%, oklch(0.94 0.04 220 / 0.8), transparent 60%),
+    radial-gradient(900px 700px at 50% 100%, oklch(0.95 0.035 260 / 0.7), transparent 60%),
+    linear-gradient(180deg, oklch(0.985 0.008 235), oklch(0.97 0.012 235));
+}
+.ambient::before,
+.ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  animation: drift 24s var(--ease-soft) infinite alternate;
+}
+.ambient::before {
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, oklch(0.85 0.08 235), transparent 70%);
+  top: -180px; left: -160px;
+}
+.ambient::after {
+  width: 560px; height: 560px;
+  background: radial-gradient(circle, oklch(0.86 0.07 210), transparent 70%);
+  top: 40%; right: -120px;
+  animation-delay: -8s;
+  animation-duration: 30s;
+}
+@keyframes drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(40px, -30px) scale(1.08); }
+  100% { transform: translate(-30px, 20px) scale(0.95); }
 }
 
-* {
-  box-sizing: border-box;
+/* Grain for warmth (very subtle) */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/></svg>");
+}
+
+/* Disable ambient motion when html.reduce-motion is set (from Tweaks) */
+html.reduce-motion .ambient::before,
+html.reduce-motion .ambient::after { animation: none !important; }
+
+/* ============================================================
+   Glass primitives
+   ============================================================ */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--r-xl);
+}
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--r-xl);
+}
+.glass-weak {
+  background: var(--glass-bg-weak);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.45);
+  border-radius: var(--r-lg);
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+}
+.eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-500);
+  font-weight: 500;
+}
+.mono { font-family: var(--font-mono); }
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 300ms var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: linear-gradient(180deg, oklch(0.42 0.10 248), oklch(0.34 0.09 250));
+  color: #fff;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.25) inset,
+    0 0 0 0.5px rgba(23,42,82,0.2),
+    0 10px 24px -10px oklch(0.40 0.10 248 / 0.45);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.3) inset,
+    0 0 0 0.5px rgba(23,42,82,0.22),
+    0 16px 30px -12px oklch(0.40 0.10 248 / 0.55);
+}
+.btn-ghost {
+  background: rgba(255,255,255,0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.7);
+  color: var(--ink-900);
+  box-shadow: 0 0 0 0.5px rgba(23,42,82,0.06), 0 4px 12px -6px rgba(23,42,82,0.08);
+}
+.btn-ghost:hover {
+  background: rgba(255,255,255,0.7);
+  transform: translateY(-1px);
+}
+.btn-icon {
+  width: 34px; height: 34px;
   padding: 0;
-  margin: 0;
+  justify-content: center;
+  border-radius: 10px;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* ============================================================
+   Pills / chips
+   ============================================================ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-700);
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(255,255,255,0.7);
+  box-shadow: 0 0 0 0.5px rgba(23,42,82,0.05);
+  border-radius: var(--r-pill);
+  letter-spacing: -0.005em;
+}
+.chip-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+/* ============================================================
+   Reveal animation
+   ============================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: reveal 800ms var(--ease) forwards;
+}
+@keyframes reveal {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(23,42,82,0.12);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(23,42,82,0.22); background-clip: padding-box; }
+
+/* Focus */
+*:focus-visible {
+  outline: 2px solid oklch(0.70 0.09 240 / 0.6);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Custom cursor — hide native on hover-capable devices when active
+   ============================================================ */
+@media (hover: hover) and (pointer: fine) {
+  html.cursor-custom,
+  html.cursor-custom body,
+  html.cursor-custom * { cursor: none !important; }
+  html.cursor-custom input,
+  html.cursor-custom textarea,
+  html.cursor-custom [contenteditable="true"] { cursor: text !important; }
+}
+
+/* Cursor ring — three modes:
+   idle  : soft frosted glass disc (what the cursor normally looks like)
+   hover : transparent outline ring so button text stays fully readable
+   text  : small outline (paired with the dot fading out for I-beam feel)     */
+.ml-cursor-ring {
+  background: rgba(255,255,255,0.35);
+  backdrop-filter: blur(6px) saturate(160%);
+  -webkit-backdrop-filter: blur(6px) saturate(160%);
+  box-shadow:
+    0 0 0 0.5px rgba(23,42,82,0.18) inset,
+    0 0 0 0.5px rgba(255,255,255,0.7),
+    0 4px 14px -4px rgba(23,42,82,0.25);
+  border: 0 solid transparent;
+}
+.ml-cursor-ring[data-mode="hover"] {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1.25px solid oklch(0.45 0.10 248 / 0.55);
+  box-shadow:
+    0 0 0 3px oklch(0.70 0.10 245 / 0.10),
+    0 2px 8px -2px oklch(0.40 0.10 248 / 0.25);
+}
+.ml-cursor-ring[data-mode="text"] {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid oklch(0.45 0.10 248 / 0.4);
+  box-shadow: none;
+}
+
+/* A tiny lift helper for interactive glass tiles */
+.lift {
+  transition: transform 420ms var(--ease), box-shadow 420ms var(--ease);
+}
+.lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Press feedback */
+.pressable { transition: transform 180ms var(--ease-soft); }
+.pressable:active { transform: scale(0.97); }
+
+/* ============================================================
+   Hero input card — elevated glass + animated halo + shimmer
+   ============================================================ */
+.input-card-wrap { position: relative; isolation: isolate; }
+
+.input-card-halo {
+  position: absolute;
+  inset: -22px;
+  border-radius: 34px;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(60% 80% at 20% 30%, oklch(0.82 0.11 240 / 0.55), transparent 70%),
+    radial-gradient(60% 80% at 80% 70%, oklch(0.80 0.10 220 / 0.55), transparent 70%),
+    radial-gradient(50% 60% at 50% 50%, oklch(0.85 0.09 260 / 0.4), transparent 70%);
+  filter: blur(28px);
+  opacity: 0.85;
+  animation: halo-drift 10s var(--ease-soft) infinite alternate, halo-breathe 4.2s var(--ease-soft) infinite;
+}
+@keyframes halo-drift {
+  0%   { transform: translate(-6px, -4px) scale(1);    }
+  100% { transform: translate(8px, 6px)   scale(1.06); }
+}
+@keyframes halo-breathe {
+  0%, 100% { opacity: 0.72; }
+  50%      { opacity: 0.95; }
+}
+
+.input-card {
+  background: rgba(255,255,255,0.78) !important;
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  border: 1px solid rgba(255,255,255,0.85) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.95) inset,
+    0 0 0 0.5px rgba(23,42,82,0.08),
+    0 20px 50px -16px rgba(23,42,82,0.22),
+    0 40px 80px -32px rgba(23,42,82,0.18) !important;
+  transition: transform 500ms var(--ease), box-shadow 500ms var(--ease);
+}
+.input-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.95) inset,
+    0 0 0 0.5px rgba(23,42,82,0.10),
+    0 28px 60px -18px rgba(23,42,82,0.28),
+    0 48px 90px -32px rgba(23,42,82,0.20) !important;
+}
+
+/* Shimmer sweep on the input row */
+.input-row::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -50%;
+  width: 40%;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255,255,255,0.7) 50%,
+    transparent 80%
+  );
+  transform: skewX(-18deg);
+  pointer-events: none;
+  animation: shimmer-sweep 4.8s ease-in-out infinite;
+  opacity: 0.55;
+}
+@keyframes shimmer-sweep {
+  0%   { left: -60%; }
+  50%  { left: 120%; }
+  100% { left: 120%; }
+}
+
+.input-row:focus-within {
+  border-color: oklch(0.65 0.10 245 / 0.5) !important;
+  box-shadow:
+    0 0 0 4px oklch(0.80 0.08 245 / 0.18),
+    0 4px 16px -6px oklch(0.50 0.10 245 / 0.25);
+  transition: box-shadow 300ms var(--ease), border-color 300ms var(--ease);
+}
+
+/* Utility */
+.no-select { user-select: none; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Stripe placeholder for imagery */
+.placeholder-stripes {
+  background-image: repeating-linear-gradient(
+    135deg,
+    oklch(0.92 0.02 235) 0, oklch(0.92 0.02 235) 1px,
+    oklch(0.96 0.015 235) 1px, oklch(0.96 0.015 235) 12px
+  );
 }
