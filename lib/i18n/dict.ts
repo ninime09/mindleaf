@@ -235,6 +235,13 @@ export const DICT = {
     en: "Select any sentence in the summary, takeaways or beginner explanation to highlight it.",
     zh: "在摘要、要点或入门讲解里，选中任意一句话就能高亮起来。",
   },
+  "toast.linkCopied":  { en: "Link copied",        zh: "已复制链接" },
+  "toast.bookmarked":  { en: "Saved to bookmarks", zh: "已收藏" },
+  "toast.unbookmarked":{ en: "Removed from bookmarks", zh: "已移出收藏" },
+  "toast.betaFree":    {
+    en: "Everything's free during the beta. Sign-up comes later.",
+    zh: "公测期间所有功能都免费。之后才会开通注册。",
+  },
   "det.tag.placeholder": { en: "tag…",            zh: "标签……" },
   "det.tag.add":         { en: "+ add",           zh: "+ 添加" },
   "det.connected.empty": { en: "Add more sources to your notebook to see related notes here.", zh: "再往笔记本里加些内容，这里就会出现相关笔记。" },

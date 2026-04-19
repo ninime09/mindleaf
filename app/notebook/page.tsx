@@ -254,7 +254,13 @@ export default function Notebook() {
                     <span style={{ fontSize: 11, color: "var(--ink-500)", fontWeight: 500 }}>{c.author}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <Icon name="bookmark" size={13} style={{ color: "var(--ink-400)" }}/>
+                    <Icon
+                      name="bookmark" size={13}
+                      style={{
+                        color: c.bookmarked ? "var(--accent-deep)" : "var(--ink-400)",
+                        fill: c.bookmarked ? "currentColor" : "none",
+                      }}
+                    />
                     <button
                       onClick={e => askDelete(e, c.id)}
                       aria-label={t("nbp.delete")}

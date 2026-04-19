@@ -282,6 +282,20 @@ export async function getNote(sourceId: string): Promise<Note | null> {
   return map[sourceId] ?? null;
 }
 
+/* Toggle the bookmarked flag on a source. Returns the new value, or
+   null if the source doesn't exist. */
+export async function toggleBookmark(id: string): Promise<boolean | null> {
+  ensureSeeded();
+  await sleep(30);
+  const sources = read<Source[]>("sources", SEED_SOURCES);
+  const idx = sources.findIndex(s => s.id === id);
+  if (idx < 0) return null;
+  const next = !sources[idx].bookmarked;
+  sources[idx] = { ...sources[idx], bookmarked: next };
+  write("sources", sources);
+  return next;
+}
+
 /* Permanently removes a source and everything keyed to it. Returns true
    if a source was found and removed, false otherwise. */
 export async function deleteSource(id: string): Promise<boolean> {

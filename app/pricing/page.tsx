@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Orb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight } from "@/components/interactions";
+import { useToast } from "@/components/toast";
 
 type TierId = "seedling" | "reader" | "studio";
 
@@ -24,9 +25,18 @@ type Tier = {
 export default function Pricing() {
   const router = useRouter();
   const { t, lang } = useLang();
+  const { push } = useToast();
   const [annual, setAnnual] = useState(true);
 
   const onEnter = () => router.push("/workspace");
+
+  /* Paid-tier CTA: we don't have billing yet, so acknowledge with a
+     toast explaining the beta state before sending the user through
+     the same free flow. Seedling stays on the bare onEnter. */
+  const onPaidTierClick = () => {
+    push(t("toast.betaFree"), { icon: "sparkle" });
+    setTimeout(() => router.push("/workspace"), 650);
+  };
 
   const handleNav = (key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -282,7 +292,7 @@ export default function Pricing() {
                   <div style={{ marginTop: 32 }}>
                     <button
                       className={tier.ctaGhost ? "btn btn-ghost pressable" : "btn btn-primary pressable"}
-                      onClick={onEnter}
+                      onClick={tier.id === "seedling" ? onEnter : onPaidTierClick}
                       style={{
                         width: "100%", padding: "13px 20px", fontSize: 14,
                         justifyContent: "center",

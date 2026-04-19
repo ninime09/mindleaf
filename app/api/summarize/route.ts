@@ -8,6 +8,7 @@ import type {
 } from "@/lib/api/types";
 import { fetchPageText, FetchError } from "@/lib/server/fetch-text";
 import { checkAndIncrement, clientIp } from "@/lib/server/rate-limit";
+import { readCached, writeCached } from "@/lib/server/response-cache";
 
 export const runtime = "nodejs";
 
@@ -183,7 +184,34 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  /* Rate limiting + daily budget cap */
+  /* Validate body FIRST so we can use it for cache lookup. Rate limit
+     after cache check — cache hits are free and shouldn't count. */
+  let body: z.infer<typeof Body>;
+  try {
+    const json = await req.json();
+    body = Body.parse(json);
+  } catch (err) {
+    return jsonError(400, err instanceof z.ZodError ? "Invalid request body." : "Body must be JSON.");
+  }
+  const targetLang: "en" | "zh" = body.lang ?? "en";
+  const cacheInput = { url: body.url, type: body.type, lang: targetLang };
+  const fresh = new URL(req.url).searchParams.get("fresh") === "1";
+
+  /* Cache check — short-circuits the entire flow on hit. */
+  if (!fresh) {
+    const cached = await readCached(cacheInput);
+    if (cached) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[summarize] cache hit url=${body.url} lang=${targetLang}`);
+      }
+      return new Response(JSON.stringify(cached), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "X-Mindleaf-Cache": "HIT" },
+      });
+    }
+  }
+
+  /* Rate limit + daily budget — only cache misses count. */
   const ip = clientIp(req);
   const limit = checkAndIncrement(ip);
   if (!limit.ok) {
@@ -194,16 +222,6 @@ export async function POST(req: Request) {
     }
     return jsonError(503, "Mindleaf has hit today's free summary budget. Try again tomorrow.");
   }
-
-  /* Validate body */
-  let body: z.infer<typeof Body>;
-  try {
-    const json = await req.json();
-    body = Body.parse(json);
-  } catch (err) {
-    return jsonError(400, err instanceof z.ZodError ? "Invalid request body." : "Body must be JSON.");
-  }
-  const targetLang: "en" | "zh" = body.lang ?? "en";
 
   /* API key check */
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -320,9 +338,13 @@ export async function POST(req: Request) {
   const highlights: Highlight[] = [];
 
   const payload: SummarizeResponse = { source, summary, takeaways, highlights };
+
+  /* Persist to disk cache — subsequent identical requests skip Claude. */
+  await writeCached(cacheInput, payload);
+
   return new Response(JSON.stringify(payload), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Mindleaf-Cache": "MISS" },
   });
 }
 

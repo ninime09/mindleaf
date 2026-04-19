@@ -17,6 +17,7 @@ export type Source = {
   takeaway?: string;
   notesCount?: number;
   highlightsCount?: number;
+  bookmarked?: boolean;
 };
 
 export type Summary = {

@@ -8,12 +8,43 @@ import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
 import {
   addHighlight, deleteHighlight, getHighlights, getNote, getSource,
   getSummary, getTakeaways, listSources, setNoteTags,
-  updateHighlightAnnotation,
+  toggleBookmark, updateHighlightAnnotation,
   type Highlight, type Note, type Source, type Summary, type Takeaway,
 } from "@/lib/api";
 import { Highlightable } from "@/components/highlightable";
 import { NoteTagEditor } from "@/components/note-tag-editor";
+import { useToast } from "@/components/toast";
 import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
+
+/* Shared bookmark/share wiring for both CanonicalDetail and DynamicDetail. */
+function useBookmarkAndShare(id: string) {
+  const { t } = useLang();
+  const { push } = useToast();
+  const [bookmarked, setBookmarked] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getSource(id).then(s => setBookmarked(s?.bookmarked ?? false));
+  }, [id]);
+
+  const onBookmark = async () => {
+    const next = await toggleBookmark(id);
+    if (next == null) return;
+    setBookmarked(next);
+    push(t(next ? "toast.bookmarked" : "toast.unbookmarked"), { icon: "bookmark" });
+  };
+
+  const onShare = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    try {
+      await navigator.clipboard.writeText(url);
+      push(t("toast.linkCopied"), { icon: "link" });
+    } catch {
+      push(t("toast.linkCopied"), { kind: "error", icon: "link" });
+    }
+  };
+
+  return { bookmarked, onBookmark, onShare };
+}
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
 
@@ -31,6 +62,7 @@ function CanonicalDetail({ id }: { id: string }) {
   const { t, lang } = useLang();
   const { notes, setNotes, savedAt } = useNotes(id, t("det.notes.body"));
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
+  const { bookmarked, onBookmark, onShare } = useBookmarkAndShare(id);
 
   const sections: { id: SectionId; label: string }[] = [
     { id: "summary",   label: t("det.sec.summary") },
@@ -79,8 +111,17 @@ function CanonicalDetail({ id }: { id: string }) {
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
             <LangSwitch compact/>
-            <button className="btn btn-ghost btn-icon"><Icon name="bookmark" size={14}/></button>
-            <button className="btn btn-ghost btn-icon"><Icon name="share" size={14}/></button>
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={onBookmark}
+              aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
+              style={bookmarked ? { color: "var(--accent-deep)" } : undefined}
+            >
+              <Icon name="bookmark" size={14} style={{ fill: bookmarked ? "currentColor" : "none" }}/>
+            </button>
+            <button className="btn btn-ghost btn-icon" onClick={onShare} aria-label="Copy link">
+              <Icon name="share" size={14}/>
+            </button>
             <button className="btn btn-ghost btn-icon"><Icon name="more" size={14}/></button>
           </div>
         </div>
@@ -470,6 +511,7 @@ function DynamicDetail({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
   const { notes, setNotes, savedAt } = useNotes(id, "");
+  const { bookmarked, onBookmark, onShare } = useBookmarkAndShare(id);
 
   useEffect(() => {
     let cancelled = false;
@@ -625,8 +667,17 @@ function DynamicDetail({ id }: { id: string }) {
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
             <LangSwitch compact/>
-            <button className="btn btn-ghost btn-icon"><Icon name="bookmark" size={14}/></button>
-            <button className="btn btn-ghost btn-icon"><Icon name="share" size={14}/></button>
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={onBookmark}
+              aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
+              style={bookmarked ? { color: "var(--accent-deep)" } : undefined}
+            >
+              <Icon name="bookmark" size={14} style={{ fill: bookmarked ? "currentColor" : "none" }}/>
+            </button>
+            <button className="btn btn-ghost btn-icon" onClick={onShare} aria-label="Copy link">
+              <Icon name="share" size={14}/>
+            </button>
           </div>
         </div>
       </div>

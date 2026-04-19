@@ -19,6 +19,7 @@ export {
   getNote,
   saveNote,
   setNoteTags,
+  toggleBookmark,
   deleteSource,
   getReviewQueue,
   persistSummarizeResponse,
