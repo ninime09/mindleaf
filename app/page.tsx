@@ -6,11 +6,12 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Orb, Segmented, Tag, Thumb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight, TiltCard } from "@/components/interactions";
+import { summarize } from "@/lib/api";
 
 type Mode = "blog" | "podcast" | "video";
 
 export default function Landing() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const router = useRouter();
   const onEnter = () => router.push("/workspace");
 
@@ -29,6 +30,20 @@ export default function Landing() {
 
   const [mode, setMode] = useState<Mode>("blog");
   const [url, setUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    const value = url.trim();
+    if (!value || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await summarize({ url: value, type: mode });
+      router.push(`/read/${res.source.id}`);
+    } catch (err) {
+      console.error("summarize failed", err);
+      setSubmitting(false);
+    }
+  };
 
   const modes = [
     { value: "blog"    as const, label: t("hero.mode.blog"),    icon: "blog"    as const, hint: t("hero.hint.blog")    },
@@ -156,7 +171,9 @@ export default function Landing() {
               <input
                 value={url}
                 onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") submit(); }}
                 placeholder={current.hint}
+                disabled={submitting}
                 style={{
                   flex: 1, border: "none", outline: "none", background: "transparent",
                   fontSize: 15, fontFamily: "var(--font-ui)", color: "var(--ink-900)",
@@ -165,9 +182,16 @@ export default function Landing() {
                 }}
               />
               <Magnetic strength={0.3}>
-                <button className="btn btn-primary pressable" onClick={onEnter}
-                  style={{ padding: "9px 18px", fontSize: 13, position: "relative" }}>
-                  <Icon name="sparkle" size={14}/> {t("hero.summarize")}
+                <button className="btn btn-primary pressable" onClick={submit}
+                  disabled={submitting || !url.trim()}
+                  style={{
+                    padding: "9px 18px", fontSize: 13, position: "relative",
+                    opacity: (submitting || !url.trim()) ? 0.6 : 1,
+                    cursor: (submitting || !url.trim()) ? "not-allowed" : "pointer",
+                  }}>
+                  {submitting
+                    ? <><span className="ml-spinner" aria-hidden/> {lang === "zh" ? "整理中…" : "Summarizing…"}</>
+                    : <><Icon name="sparkle" size={14}/> {t("hero.summarize")}</>}
                 </button>
               </Magnetic>
             </div>

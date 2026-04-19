@@ -3,14 +3,39 @@ import type {
   SummarizeRequest, SummarizeResponse, Summary, Takeaway,
 } from "./types";
 
-/* Tiny async helper so callers always await — makes swapping to a real API painless. */
+/* ============================================================
+   localStorage-backed store, SSR-safe.
+   Each collection has a stable key and a seed value. First client-side
+   access lazy-seeds; subsequent reads/writes hit localStorage.
+   ============================================================ */
+
+const NS = "mindleaf.store.";
+const SEEDED_FLAG = "mindleaf.seeded";
+
+function hasStorage(): boolean {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
+function read<T>(key: string, fallback: T): T {
+  if (!hasStorage()) return fallback;
+  try {
+    const raw = localStorage.getItem(NS + key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch { return fallback; }
+}
+
+function write<T>(key: string, value: T): void {
+  if (!hasStorage()) return;
+  try { localStorage.setItem(NS + key, JSON.stringify(value)); } catch {}
+}
+
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 /* ============================================================
-   Fixture data
+   Seeds — loaded once into localStorage on first client access.
    ============================================================ */
 
-const COLLECTIONS: Collection[] = [
+const SEED_COLLECTIONS: Collection[] = [
   { id: "ml",      name: "Machine learning", count: 14 },
   { id: "phil",    name: "Philosophy",       count: 8  },
   { id: "design",  name: "Design & craft",   count: 6  },
@@ -18,11 +43,11 @@ const COLLECTIONS: Collection[] = [
   { id: "learn",   name: "Learning itself",  count: 4  },
 ];
 
-const SOURCES: Source[] = [
+const SEED_SOURCES: Source[] = [
   {
     id: "designing-calm-software",
     title: "Designing calm software",
-    author: "Linzi Berry",
+    author: "Figma Config '25",
     type: "video",
     url: "https://example.com/config25/calm-software",
     durationSec: 54 * 60 + 12,
@@ -30,6 +55,8 @@ const SOURCES: Source[] = [
     collectionId: "design",
     tags: ["craft", "product"],
     hue: 220,
+    takeaway: "Calm ≠ minimal. Calm is context-aware: appear on intent, stay quiet otherwise.",
+    notesCount: 4, highlightsCount: 12,
   },
   {
     id: "transformer-really",
@@ -42,6 +69,8 @@ const SOURCES: Source[] = [
     collectionId: "ml",
     tags: ["attention", "fundamentals"],
     hue: 235,
+    takeaway: "Attention lets a model weigh every part of the input against every other — all at once.",
+    notesCount: 3, highlightsCount: 8,
   },
   {
     id: "writing-clearly",
@@ -53,6 +82,8 @@ const SOURCES: Source[] = [
     collectionId: "writing",
     tags: ["craft", "thinking"],
     hue: 85,
+    takeaway: "Good writing is a side-effect of good thinking. The prose just lets the thought breathe.",
+    notesCount: 2, highlightsCount: 5,
   },
   {
     id: "scaling-hypothesis",
@@ -64,10 +95,12 @@ const SOURCES: Source[] = [
     collectionId: "ml",
     tags: ["scale", "ai"],
     hue: 260,
+    takeaway: "A lot of what looks like intelligence may just be scale meeting the right objective.",
+    notesCount: 6, highlightsCount: 14,
   },
 ];
 
-const SUMMARIES: Record<string, Summary> = {
+const SEED_SUMMARIES: Record<string, Summary> = {
   "designing-calm-software": {
     sourceId: "designing-calm-software",
     thesis: "Software has gotten louder at the exact moment our attention is most fragile.",
@@ -79,7 +112,7 @@ const SUMMARIES: Record<string, Summary> = {
   },
 };
 
-const TAKEAWAYS: Record<string, Takeaway[]> = {
+const SEED_TAKEAWAYS: Record<string, Takeaway[]> = {
   "designing-calm-software": [
     { id: "t1", title: "Calm ≠ minimal. Calm is context-aware.",   detail: "The goal isn't to remove UI — it's to make UI appear exactly when needed, and disappear when it isn't." },
     { id: "t2", title: "Notifications must earn their interruption.", detail: "Each push is a tax on attention. The test: would this still be valuable if the user discovered it an hour later on their own?" },
@@ -88,7 +121,7 @@ const TAKEAWAYS: Record<string, Takeaway[]> = {
   ],
 };
 
-const HIGHLIGHTS: Record<string, Highlight[]> = {
+const SEED_HIGHLIGHTS: Record<string, Highlight[]> = {
   "designing-calm-software": [
     { id: "h1", sourceId: "designing-calm-software", text: "Notifications should earn their interruption.", timestamp: "04:12", hue: 85  },
     { id: "h2", sourceId: "designing-calm-software", text: "Default to showing less; reveal on intent.",   timestamp: "08:47", hue: 235 },
@@ -97,73 +130,111 @@ const HIGHLIGHTS: Record<string, Highlight[]> = {
   ],
 };
 
-const NOTES: Record<string, Note> = {
+const SEED_NOTES: Record<string, Note> = {
   "designing-calm-software": {
     id: "n1",
     sourceId: "designing-calm-software",
     body: "Linzi's 'good house guest' metaphor connects directly to my onboarding work — reducing manufactured urgency. The motion-as-causality point echoes Rams' 'as little design as possible.'\n\nFollow up: find primary sources on attention economy → interruption research.",
-    updatedAt: new Date().toISOString(),
+    updatedAt: "2026-04-17T15:00:00Z",
     tags: ["attention", "craft", "product"],
   },
 };
 
-const REVIEW_QUEUE: ReviewCard[] = [
+const SEED_REVIEW: ReviewCard[] = [
   {
     id: "r1",
     sourceId: "transformer-really",
     front: "What does attention actually do, in one sentence?",
     back: "Attention lets a model weigh every part of the input against every other — all at once.",
-    dueAt: new Date().toISOString(),
+    dueAt: "2026-04-18T00:00:00Z",
     intervalDays: 2,
   },
 ];
 
+/* One-shot seeding. Runs on first client-side call to any getter/setter. */
+function ensureSeeded() {
+  if (!hasStorage()) return;
+  if (localStorage.getItem(SEEDED_FLAG) === "1") return;
+  write("collections", SEED_COLLECTIONS);
+  write("sources",     SEED_SOURCES);
+  write("summaries",   SEED_SUMMARIES);
+  write("takeaways",   SEED_TAKEAWAYS);
+  write("highlights",  SEED_HIGHLIGHTS);
+  write("notes",       SEED_NOTES);
+  write("review",      SEED_REVIEW);
+  localStorage.setItem(SEEDED_FLAG, "1");
+}
+
+/* Utility — escape hatch for dev/testing. Wipes the mock store. */
+export function __resetMockStore() {
+  if (!hasStorage()) return;
+  [
+    "collections", "sources", "summaries", "takeaways",
+    "highlights", "notes", "review",
+  ].forEach(k => localStorage.removeItem(NS + k));
+  localStorage.removeItem(SEEDED_FLAG);
+}
+
 /* ============================================================
-   Public API surface — swap these with real Claude calls later.
-   Every function is async so callers can't assume sync behavior.
+   Public API surface — stable shape, ready to swap for real calls.
    ============================================================ */
 
 export async function listSources(opts?: { collectionId?: string; tag?: string }): Promise<Source[]> {
-  await sleep(80);
-  return SOURCES.filter(s =>
+  ensureSeeded();
+  await sleep(40);
+  const all = read<Source[]>("sources", SEED_SOURCES);
+  return all.filter(s =>
     (!opts?.collectionId || opts.collectionId === "all" || s.collectionId === opts.collectionId) &&
     (!opts?.tag || s.tags.includes(opts.tag))
   );
 }
 
 export async function getSource(id: string): Promise<Source | null> {
-  await sleep(50);
-  return SOURCES.find(s => s.id === id) ?? null;
+  ensureSeeded();
+  await sleep(30);
+  const all = read<Source[]>("sources", SEED_SOURCES);
+  return all.find(s => s.id === id) ?? null;
 }
 
 export async function listCollections(): Promise<Collection[]> {
-  await sleep(30);
-  return COLLECTIONS;
+  ensureSeeded();
+  await sleep(20);
+  return read<Collection[]>("collections", SEED_COLLECTIONS);
 }
 
 export async function getSummary(sourceId: string): Promise<Summary | null> {
-  await sleep(40);
-  return SUMMARIES[sourceId] ?? null;
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
+  return map[sourceId] ?? null;
 }
 
 export async function getTakeaways(sourceId: string): Promise<Takeaway[]> {
-  await sleep(40);
-  return TAKEAWAYS[sourceId] ?? [];
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Takeaway[]>>("takeaways", SEED_TAKEAWAYS);
+  return map[sourceId] ?? [];
 }
 
 export async function getHighlights(sourceId: string): Promise<Highlight[]> {
-  await sleep(40);
-  return HIGHLIGHTS[sourceId] ?? [];
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  return map[sourceId] ?? [];
 }
 
 export async function getNote(sourceId: string): Promise<Note | null> {
-  await sleep(30);
-  return NOTES[sourceId] ?? null;
+  ensureSeeded();
+  await sleep(20);
+  const map = read<Record<string, Note>>("notes", SEED_NOTES);
+  return map[sourceId] ?? null;
 }
 
 export async function saveNote(sourceId: string, body: string): Promise<Note> {
-  await sleep(120); /* simulate autosave */
-  const existing = NOTES[sourceId];
+  ensureSeeded();
+  await sleep(80);
+  const map = read<Record<string, Note>>("notes", SEED_NOTES);
+  const existing = map[sourceId];
   const next: Note = {
     id: existing?.id ?? `n-${sourceId}`,
     sourceId,
@@ -171,47 +242,72 @@ export async function saveNote(sourceId: string, body: string): Promise<Note> {
     tags: existing?.tags ?? [],
     updatedAt: new Date().toISOString(),
   };
-  NOTES[sourceId] = next;
+  map[sourceId] = next;
+  write("notes", map);
   return next;
 }
 
 export async function getReviewQueue(): Promise<ReviewCard[]> {
-  await sleep(40);
-  return REVIEW_QUEUE;
+  ensureSeeded();
+  await sleep(30);
+  return read<ReviewCard[]>("review", SEED_REVIEW);
 }
 
-/* The headline endpoint — this one becomes a Claude API call later.
-   Returns a fabricated SummarizeResponse for the URL.
-   When we plug in the real Claude API, the shape stays the same. */
+/* Headline endpoint — creates + persists a new source end to end.
+   This one becomes a Claude API call later; the return shape stays identical. */
 export async function summarize(req: SummarizeRequest): Promise<SummarizeResponse> {
+  ensureSeeded();
   await sleep(900); /* mimic AI latency */
-  const slug = slugify(req.url) || `draft-${Date.now()}`;
+
+  const baseSlug = slugify(req.url) || `draft-${Date.now()}`;
+  const existingSources = read<Source[]>("sources", SEED_SOURCES);
+  const id = uniqueId(baseSlug, existingSources.map(s => s.id));
+
   const source: Source = {
-    id: slug,
-    title: `Summary of ${req.url}`,
+    id,
+    title: fallbackTitle(req.url),
     author: "Unknown",
     type: req.type,
     url: req.url,
     addedAt: new Date().toISOString(),
     tags: [],
     hue: pickHue(req.type),
+    takeaway: "A calm, beginner-friendly summary of the source you pasted.",
+    notesCount: 0,
+    highlightsCount: 0,
   };
-  return {
-    source,
-    summary: {
-      sourceId: slug,
-      thesis: "[MOCK] A calm, beginner-friendly summary of the source you pasted.",
-      paragraphs: [
-        "[MOCK] This is where Claude will return a distilled, editorial summary of the source.",
-        "[MOCK] Until wired, mock data stands in so the UI and state flow can be verified end to end.",
-      ],
-    },
-    takeaways: [
-      { id: "mock-1", title: "Main idea, one sentence.",      detail: "[MOCK] The single most important takeaway lives here." },
-      { id: "mock-2", title: "Counterintuitive implication.", detail: "[MOCK] Something worth sitting with." },
+
+  const summary: Summary = {
+    sourceId: id,
+    thesis: "A calm, beginner-friendly summary of the source you pasted.",
+    paragraphs: [
+      "This is where Claude will return a distilled, editorial summary of the source — covering the core thesis in plain words and a few paragraphs of context.",
+      "While we're wired to the mock API, this paragraph stands in so the UI and state flow can be verified end to end. When we swap in the real Claude integration, only this function changes — the shape of the response is identical.",
+      "Takeaways, highlights, and your personal notes below all hang off the same source ID, so everything persists together.",
     ],
-    highlights: [],
   };
+
+  const takeaways: Takeaway[] = [
+    { id: `tk-${id}-1`, title: "Main idea, in one sentence.",              detail: "The single most important takeaway lives here, written as a sentence you could carry with you all week." },
+    { id: `tk-${id}-2`, title: "Why it might be counterintuitive.",         detail: "A note on where the idea pushes back against the usual way of thinking about it." },
+    { id: `tk-${id}-3`, title: "The worked example worth remembering.",     detail: "One concrete case that makes the abstract point land." },
+  ];
+
+  const highlights: Highlight[] = [];
+
+  /* Persist everything keyed by source ID. */
+  write("sources",    [source, ...existingSources]);
+  const sumMap = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
+  sumMap[id] = summary;
+  write("summaries", sumMap);
+  const tkMap = read<Record<string, Takeaway[]>>("takeaways", SEED_TAKEAWAYS);
+  tkMap[id] = takeaways;
+  write("takeaways", tkMap);
+  const hlMap = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  hlMap[id] = highlights;
+  write("highlights", hlMap);
+
+  return { source, summary, takeaways, highlights };
 }
 
 function slugify(s: string): string {
@@ -221,6 +317,22 @@ function slugify(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
+}
+
+function uniqueId(base: string, existing: string[]): string {
+  if (!existing.includes(base)) return base;
+  let n = 2;
+  while (existing.includes(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
+function fallbackTitle(url: string): string {
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    const last = u.pathname.split("/").filter(Boolean).pop();
+    if (last) return last.replace(/[-_]/g, " ").replace(/\.[a-z]+$/i, "");
+    return u.hostname;
+  } catch { return url.slice(0, 60); }
 }
 
 function pickHue(type: SourceType): number {

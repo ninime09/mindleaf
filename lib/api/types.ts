@@ -13,6 +13,10 @@ export type Source = {
   collectionId?: string;
   tags: string[];
   hue: number;
+  /* List-view extras — populated at summarize time, kept on the source for fast list rendering. */
+  takeaway?: string;
+  notesCount?: number;
+  highlightsCount?: number;
 };
 
 export type Summary = {

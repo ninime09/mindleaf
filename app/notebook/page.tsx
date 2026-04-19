@@ -1,69 +1,64 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Progress, Segmented } from "@/components/primitives";
+import { listSources, type Source } from "@/lib/api";
 
 type View = "grid" | "list" | "review";
 type CollectionId = "all" | "ml" | "design" | "phil" | "writing" | "learn";
-type SourceType = "video" | "podcast" | "blog";
 
-const DETAIL_PATH = "/read/designing-calm-software";
-
-type Card = {
-  title: string; source: string; type: SourceType; col: Exclude<CollectionId, "all">;
-  tags: string[]; time: string; hue: number; takeaway: string; notes: number; highlights: number;
-};
-
-const CARDS: Card[] = [
-  { title: "What is a transformer, really?",             source: "3Blue1Brown",          type: "video",   col: "ml",      tags: ["attention", "fundamentals"], time: "April 18", hue: 235, takeaway: "Attention lets a model weigh every part of the input against every other — all at once.", notes: 3, highlights: 8  },
-  { title: "Designing calm software",                    source: "Figma Config '25",     type: "video",   col: "design",  tags: ["craft", "product"],          time: "April 17", hue: 220, takeaway: "Calm ≠ minimal. Calm is context-aware: appear on intent, stay quiet otherwise.",           notes: 4, highlights: 12 },
-  { title: "On writing, clearly",                         source: "Paul Graham",          type: "blog",    col: "writing", tags: ["craft", "thinking"],         time: "April 14", hue: 85,  takeaway: "Good writing is a side-effect of good thinking. The prose just lets the thought breathe.",   notes: 2, highlights: 5  },
-  { title: "The scaling hypothesis",                      source: "Gwern",                type: "blog",    col: "ml",      tags: ["scale", "ai"],               time: "April 11", hue: 260, takeaway: "A lot of what looks like intelligence may just be scale meeting the right objective.",       notes: 6, highlights: 14 },
-  { title: "Fridman × Altman on AGI timelines",           source: "Lex Fridman #412",     type: "podcast", col: "ml",      tags: ["ai", "to-revisit"],          time: "April 09", hue: 290, takeaway: "Capability jumps come in waves; the flat stretches between are when culture catches up.",   notes: 1, highlights: 6  },
-  { title: "The Stoic morning routine",                   source: "Ryan Holiday",         type: "blog",    col: "phil",    tags: ["stoic", "habits"],           time: "April 07", hue: 30,  takeaway: "The morning is the only time of day entirely your own. Use it to set intention, not intake.", notes: 2, highlights: 4  },
-  { title: "Deep work in 2026",                           source: "Cal Newport",          type: "podcast", col: "phil",    tags: ["focus", "attention"],        time: "April 05", hue: 180, takeaway: "Protecting attention isn't a productivity hack — it's a value statement about whose thoughts you want in your head.", notes: 3, highlights: 7 },
-  { title: "On the aesthetics of JSON",                   source: "Mike Bostock",         type: "blog",    col: "design",  tags: ["craft", "data"],             time: "April 02", hue: 170, takeaway: "Readable data structures invite good thinking. The indentation is doing real work.",        notes: 1, highlights: 3  },
-  { title: "Teaching yourself a language",                source: "Benny Lewis podcast",  type: "podcast", col: "learn",   tags: ["learning", "habits"],        time: "March 28", hue: 130, takeaway: "Speak from day one. Comprehension grows around output, not the other way around.",          notes: 2, highlights: 5  },
-];
-
-const ALL_TAGS: { t: string; n: number }[] = [
-  { t: "attention",    n: 4 },
-  { t: "craft",        n: 6 },
-  { t: "fundamentals", n: 3 },
-  { t: "to-revisit",   n: 5 },
-  { t: "habits",       n: 4 },
-  { t: "focus",        n: 2 },
-  { t: "ai",           n: 7 },
-  { t: "scale",        n: 2 },
-  { t: "thinking",     n: 3 },
-];
+function formatDate(iso: string, lang: "en" | "zh"): string {
+  try {
+    return new Date(iso).toLocaleDateString(
+      lang === "zh" ? "zh-CN" : "en-US",
+      { month: lang === "zh" ? "numeric" : "long", day: "numeric" }
+    );
+  } catch { return iso.slice(0, 10); }
+}
 
 export default function Notebook() {
   const router = useRouter();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [view, setView] = useState<View>("grid");
   const [collection, setCollection] = useState<CollectionId>("all");
   const [tag, setTag] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
-  const onOpen = () => router.push(DETAIL_PATH);
+  const [sources, setSources] = useState<Source[]>([]);
 
-  const collections: { id: CollectionId; label: string; count: number }[] = [
-    { id: "all",     label: t("nbp.col.all"),     count: CARDS.length },
-    { id: "ml",      label: t("nbp.col.ml"),      count: CARDS.filter(c => c.col === "ml").length },
-    { id: "design",  label: t("nbp.col.design"),  count: CARDS.filter(c => c.col === "design").length },
-    { id: "phil",    label: t("nbp.col.phil"),    count: CARDS.filter(c => c.col === "phil").length },
-    { id: "writing", label: t("nbp.col.writing"), count: CARDS.filter(c => c.col === "writing").length },
-    { id: "learn",   label: t("nbp.col.learn"),   count: CARDS.filter(c => c.col === "learn").length },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    listSources().then(s => {
+      if (cancelled) return;
+      setSources(s);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
-  const filtered = CARDS.filter(c => {
-    if (collection !== "all" && c.col !== collection) return false;
+  const openSource = (id: string) => router.push(`/read/${id}`);
+
+  const collections: { id: CollectionId; label: string; count: number }[] = useMemo(() => [
+    { id: "all",     label: t("nbp.col.all"),     count: sources.length },
+    { id: "ml",      label: t("nbp.col.ml"),      count: sources.filter(c => c.collectionId === "ml").length },
+    { id: "design",  label: t("nbp.col.design"),  count: sources.filter(c => c.collectionId === "design").length },
+    { id: "phil",    label: t("nbp.col.phil"),    count: sources.filter(c => c.collectionId === "phil").length },
+    { id: "writing", label: t("nbp.col.writing"), count: sources.filter(c => c.collectionId === "writing").length },
+    { id: "learn",   label: t("nbp.col.learn"),   count: sources.filter(c => c.collectionId === "learn").length },
+  ], [sources, t]);
+
+  const ALL_TAGS = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of sources) for (const tg of s.tags) counts.set(tg, (counts.get(tg) ?? 0) + 1);
+    return [...counts.entries()].map(([tname, n]) => ({ t: tname, n })).sort((a, b) => b.n - a.n);
+  }, [sources]);
+
+  const filtered = sources.filter(c => {
+    if (collection !== "all" && c.collectionId !== collection) return false;
     if (tag && !c.tags.includes(tag)) return false;
-    if (q && !(c.title + c.source + c.takeaway).toLowerCase().includes(q.toLowerCase())) return false;
+    if (q && !((c.title + c.author + (c.takeaway ?? "")).toLowerCase().includes(q.toLowerCase()))) return false;
     return true;
   });
 
@@ -208,7 +203,7 @@ export default function Notebook() {
             gap: 14,
           }}>
             {filtered.map((c, i) => (
-              <div key={c.title} onClick={onOpen} className="reveal"
+              <div key={c.id} onClick={() => openSource(c.id)} className="reveal"
                 style={{
                   animationDelay: `${i * 40}ms`,
                   background: "rgba(255,255,255,0.55)",
@@ -239,7 +234,7 @@ export default function Notebook() {
                       display: "flex", alignItems: "center", justifyContent: "center",
                       color: `oklch(0.40 0.09 ${c.hue})`,
                     }}><Icon name={c.type} size={12}/></div>
-                    <span style={{ fontSize: 11, color: "var(--ink-500)", fontWeight: 500 }}>{c.source}</span>
+                    <span style={{ fontSize: 11, color: "var(--ink-500)", fontWeight: 500 }}>{c.author}</span>
                   </div>
                   <Icon name="bookmark" size={13} style={{ color: "var(--ink-400)" }}/>
                 </div>
@@ -264,13 +259,13 @@ export default function Notebook() {
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: "var(--ink-400)" }}>
-                    <span><Icon name="notebook" size={10} style={{ verticalAlign: -1, marginRight: 3 }}/>{c.notes}</span>
-                    <span><Icon name="highlight" size={10} style={{ verticalAlign: -1, marginRight: 3 }}/>{c.highlights}</span>
+                    <span><Icon name="notebook" size={10} style={{ verticalAlign: -1, marginRight: 3 }}/>{c.notesCount ?? 0}</span>
+                    <span><Icon name="highlight" size={10} style={{ verticalAlign: -1, marginRight: 3 }}/>{c.highlightsCount ?? 0}</span>
                   </div>
                 </div>
 
                 <div style={{ fontSize: 10, color: "var(--ink-400)", fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}>
-                  {c.time}
+                  {formatDate(c.addedAt, lang)}
                 </div>
               </div>
             ))}
@@ -291,7 +286,7 @@ export default function Notebook() {
                 borderRadius: 12,
               };
               return (
-                <div key={c.title} onClick={onOpen} style={rowStyle}
+                <div key={c.id} onClick={() => openSource(c.id)} style={rowStyle}
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.5)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                   <div style={{
@@ -306,7 +301,7 @@ export default function Notebook() {
                     <div style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>&ldquo;{c.takeaway}&rdquo;</div>
                   </div>
 
-                  <div style={{ fontSize: 12, color: "var(--ink-500)" }}>{c.source}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-500)" }}>{c.author}</div>
 
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     {c.tags.slice(0, 2).map(tt => (
@@ -319,7 +314,7 @@ export default function Notebook() {
                   </div>
 
                   <div style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)", textAlign: "right" }}>
-                    {c.time}
+                    {formatDate(c.addedAt, lang)}
                   </div>
                 </div>
               );
@@ -387,7 +382,7 @@ export default function Notebook() {
                 <div className="eyebrow" style={{ marginBottom: 10 }}>Up next in review</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {filtered.slice(1, 4).map(c => (
-                    <div key={c.title} style={{
+                    <div key={c.id} style={{
                       display: "flex", alignItems: "center", gap: 10,
                       padding: "8px 10px", borderRadius: 10,
                       background: "rgba(255,255,255,0.4)",
@@ -400,7 +395,7 @@ export default function Notebook() {
                       }}><Icon name={c.type} size={11}/></div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12.5, fontWeight: 550 }} className="truncate">{c.title}</div>
-                        <div style={{ fontSize: 10.5, color: "var(--ink-400)" }}>{c.source}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--ink-400)" }}>{c.author}</div>
                       </div>
                     </div>
                   ))}

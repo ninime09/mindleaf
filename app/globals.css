@@ -418,6 +418,20 @@ html.reduce-motion .ambient::after { animation: none !important; }
 .no-select { user-select: none; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Tiny inline spinner for button loading states */
+.ml-spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 1.5px solid rgba(255,255,255,0.35);
+  border-top-color: rgba(255,255,255,0.95);
+  border-radius: 50%;
+  animation: ml-spin 720ms linear infinite;
+  vertical-align: -2px;
+}
+@keyframes ml-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Stripe placeholder for imagery */
 .placeholder-stripes {
   background-image: repeating-linear-gradient(

@@ -1,25 +1,63 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n/context";
 import { Icon } from "@/components/icons";
 import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
+import {
+  getHighlights, getNote, getSource, getSummary, getTakeaways, saveNote,
+  type Highlight, type Source, type Summary, type Takeaway,
+} from "@/lib/api";
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
 
+const CANONICAL_ID = "designing-calm-software";
+
 export default function Detail() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? CANONICAL_ID;
+  if (id === CANONICAL_ID) return <CanonicalDetail id={id}/>;
+  return <DynamicDetail id={id}/>;
+}
+
+/* ============================================================
+   Shared hook — notes loaded from API, debounced save on edit.
+   Falls back to the i18n default copy if no note exists yet.
+   ============================================================ */
+function useNotes(id: string, fallback: string) {
+  const [notes, setNotes] = useState(fallback);
+  const [loaded, setLoaded] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getNote(id).then(n => {
+      if (cancelled) return;
+      if (n) setNotes(n.body);
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      saveNote(id, notes).then(n => setSavedAt(new Date(n.updatedAt)));
+    }, 500);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [notes, loaded, id]);
+
+  return { notes, setNotes, savedAt };
+}
+
+function CanonicalDetail({ id }: { id: string }) {
   const router = useRouter();
   const { t, lang } = useLang();
-  const [notes, setNotes] = useState(() => t("det.notes.body"));
-  const [prevLang, setPrevLang] = useState(lang);
+  const { notes, setNotes, savedAt } = useNotes(id, t("det.notes.body"));
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
-
-  // Reset notes when language flips (derived-state pattern).
-  if (prevLang !== lang) {
-    setPrevLang(lang);
-    setNotes(t("det.notes.body"));
-  }
 
   const sections: { id: SectionId; label: string }[] = [
     { id: "summary",   label: t("det.sec.summary") },
@@ -305,7 +343,7 @@ export default function Detail() {
           <section id="sec-notes" style={{ marginBottom: 40 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
               <div className="eyebrow">{t("det.notes.eyebrow")}</div>
-              <span style={{ fontSize: 11, color: "var(--ink-400)" }}>{t("det.notes.saved")}</span>
+              <span style={{ fontSize: 11, color: "var(--ink-400)" }}>{savedLabel(savedAt, lang, t("det.notes.saved"))}</span>
             </div>
             <h2 className="display" style={{ fontSize: 34, margin: "0 0 20px", letterSpacing: "-0.02em" }}>
               {t("det.notes.h")}
@@ -439,4 +477,243 @@ export default function Detail() {
       </div>
     </div>
   );
+}
+
+/* ============================================================
+   DynamicDetail — for any source ID other than the canonical demo.
+   Pulls source/summary/takeaways/highlights from the mock API and
+   renders a slimmer editorial layout. Notes wired through the same hook.
+   ============================================================ */
+function DynamicDetail({ id }: { id: string }) {
+  const router = useRouter();
+  const { t, lang } = useLang();
+  const [source, setSource] = useState<Source | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [takeaways, setTakeaways] = useState<Takeaway[]>([]);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const { notes, setNotes, savedAt } = useNotes(id, "");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      getSource(id), getSummary(id), getTakeaways(id), getHighlights(id),
+    ]).then(([s, sum, tk, hl]) => {
+      if (cancelled) return;
+      if (!s) { setNotFound(true); setLoading(false); return; }
+      setSource(s);
+      setSummary(sum);
+      setTakeaways(tk);
+      setHighlights(hl);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div style={{
+        position: "relative", zIndex: 2, minHeight: "100vh",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexDirection: "column", gap: 16,
+      }}>
+        <div className="ml-spinner" style={{ width: 28, height: 28, borderColor: "rgba(23,42,82,0.2)", borderTopColor: "var(--accent-deep)" } as React.CSSProperties}/>
+        <div style={{ fontSize: 13, color: "var(--ink-500)" }}>
+          {lang === "zh" ? "加载中…" : "Loading…"}
+        </div>
+      </div>
+    );
+  }
+
+  if (notFound || !source) {
+    return (
+      <div style={{
+        position: "relative", zIndex: 2, minHeight: "100vh",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexDirection: "column", gap: 14, padding: 24, textAlign: "center",
+      }}>
+        <h1 className="display" style={{ fontSize: 36, margin: 0, letterSpacing: "-0.02em" }}>
+          {lang === "zh" ? "找不到这份内容" : "Source not found"}
+        </h1>
+        <p style={{ fontSize: 14, color: "var(--ink-500)", maxWidth: 420, margin: 0 }}>
+          {lang === "zh"
+            ? "这份内容可能已被移除，或者你打开了一个旧链接。"
+            : "This source may have been removed, or you followed a stale link."}
+        </p>
+        <button onClick={() => router.push("/")} className="btn btn-primary pressable" style={{ padding: "9px 16px", fontSize: 13 }}>
+          {lang === "zh" ? "回到首页" : "Back to home"} <Icon name="arrow" size={13}/>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "relative", zIndex: 2, minHeight: "100vh" }}>
+      {/* Top bar */}
+      <div style={{ position: "sticky", top: 0, zIndex: 40, padding: "16px 24px 0" }}>
+        <div className="glass-strong" style={{
+          maxWidth: 1100, margin: "0 auto",
+          padding: "10px 14px",
+          display: "flex", alignItems: "center", gap: 12,
+          borderRadius: 16,
+        }}>
+          <button onClick={() => router.push("/")} className="btn btn-ghost" style={{ padding: "6px 10px", fontSize: 12.5 }}>
+            <Icon name="chevron" size={13} style={{ transform: "rotate(180deg)" }}/> {lang === "zh" ? "首页" : "Home"}
+          </button>
+          <button onClick={() => router.push("/notebook")} className="btn btn-ghost" style={{ padding: "6px 10px", fontSize: 12.5 }}>
+            <Icon name="notebook" size={13}/> {t("nav.notebook")}
+          </button>
+          <div style={{ width: 1, height: 18, background: "rgba(23,42,82,0.1)" }}/>
+          <div style={{ fontSize: 12.5, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+            <Icon name={source.type} size={12}/>
+            <span className="truncate" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{source.title}</span>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+            <LangSwitch compact/>
+            <button className="btn btn-ghost btn-icon"><Icon name="bookmark" size={14}/></button>
+            <button className="btn btn-ghost btn-icon"><Icon name="share" size={14}/></button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px 120px" }}>
+        <article>
+          {/* Header */}
+          <div className="reveal">
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+              <Tag color={source.type === "video" ? "blue" : source.type === "podcast" ? "violet" : "sage"}>
+                {source.type === "video" ? t("det.meta.video") : source.type === "podcast" ? t("dash.mode.pod") : t("dash.mode.blog")}
+              </Tag>
+              <span style={{ fontSize: 11.5, color: "var(--ink-400)", fontFamily: "var(--font-mono)" }}>
+                {new Date(source.addedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" })}
+              </span>
+            </div>
+
+            <h1 className="display" style={{
+              fontSize: "clamp(36px, 5vw, 56px)", margin: "0 0 20px",
+              letterSpacing: "-0.025em", lineHeight: 1.05,
+              wordBreak: "keep-all", overflowWrap: "break-word",
+            }}>
+              {source.title}
+            </h1>
+
+            <div style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 32 }}>
+              {source.author} · <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-deep)", textDecoration: "none" }}>{lang === "zh" ? "查看原文" : "View source"} <Icon name="link" size={11} style={{ verticalAlign: -1 }}/></a>
+            </div>
+          </div>
+
+          {/* Summary */}
+          {summary && (
+            <section style={{ marginBottom: 48 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.summary")}</div>
+              <h2 className="display" style={{ fontSize: 28, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
+                {summary.thesis}
+              </h2>
+              <div style={{ fontSize: 16, lineHeight: 1.7, color: "var(--ink-700)", fontFamily: "var(--font-display)" }}>
+                {summary.paragraphs.map((p, i) => (
+                  <p key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{p}</p>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Takeaways */}
+          {takeaways.length > 0 && (
+            <section style={{ marginBottom: 48 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.take")}</div>
+              <h2 className="display" style={{ fontSize: 28, margin: "0 0 20px", letterSpacing: "-0.02em" }}>
+                {t("det.take.h")}
+              </h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {takeaways.map((tk, i) => (
+                  <div key={tk.id} className="glass" style={{ padding: 20, borderRadius: 14, display: "flex", gap: 16 }}>
+                    <div className="display" style={{
+                      fontSize: 26, color: "var(--accent-deep)",
+                      letterSpacing: "-0.02em", flexShrink: 0, width: 38,
+                    }}>{String(i + 1).padStart(2, "0")}</div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 550, marginBottom: 4, letterSpacing: "-0.01em" }}>{tk.title}</div>
+                      <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--ink-500)" }}>{tk.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Highlights (only if any) */}
+          {highlights.length > 0 && (
+            <section style={{ marginBottom: 48 }}>
+              <div className="eyebrow" style={{ marginBottom: 14 }}>{t("det.hls")}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {highlights.map(h => (
+                  <div key={h.id} style={{
+                    padding: "10px 14px", borderRadius: 10,
+                    background: `oklch(0.96 0.03 ${h.hue} / 0.55)`,
+                    borderLeft: `2px solid oklch(0.68 0.10 ${h.hue})`,
+                    fontSize: 13.5, lineHeight: 1.55, color: "var(--ink-700)",
+                  }}>
+                    {h.timestamp && (
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-400)", marginBottom: 3 }}>
+                        @ {h.timestamp}
+                      </div>
+                    )}
+                    &ldquo;{h.text}&rdquo;
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Notes */}
+          <section>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+              <div className="eyebrow">{t("det.notes.eyebrow")}</div>
+              <span style={{ fontSize: 11, color: "var(--ink-400)" }}>{savedLabel(savedAt, lang, t("det.notes.saved"))}</span>
+            </div>
+            <h2 className="display" style={{ fontSize: 28, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
+              {t("det.notes.h")}
+            </h2>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder={lang === "zh" ? "在这里写下你的想法……" : "Write what this means for you…"}
+              style={{
+                width: "100%", minHeight: 200,
+                background: "rgba(255,255,255,0.55)",
+                backdropFilter: "blur(20px) saturate(160%)",
+                WebkitBackdropFilter: "blur(20px) saturate(160%)",
+                border: "1px solid rgba(255,255,255,0.7)",
+                boxShadow: "0 0 0 0.5px rgba(23,42,82,0.06)",
+                borderRadius: 16,
+                padding: 20,
+                fontFamily: "var(--font-display)", fontSize: 16, lineHeight: 1.7,
+                color: "var(--ink-900)", resize: "vertical", outline: "none",
+                letterSpacing: "-0.005em",
+              }}
+            />
+          </section>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   savedLabel — formats the autosave timestamp for the UI.
+   ============================================================ */
+function savedLabel(savedAt: Date | null, lang: "en" | "zh", fallback: string): string {
+  if (!savedAt) return fallback;
+  const elapsed = Date.now() - savedAt.getTime();
+  if (lang === "zh") {
+    if (elapsed < 5_000)   return "已保存 · 刚刚";
+    if (elapsed < 60_000)  return `已保存 · ${Math.floor(elapsed / 1000)} 秒前`;
+    if (elapsed < 3600_000) return `已保存 · ${Math.floor(elapsed / 60_000)} 分钟前`;
+    return `已保存 · ${savedAt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  if (elapsed < 5_000)   return "Saved · just now";
+  if (elapsed < 60_000)  return `Saved · ${Math.floor(elapsed / 1000)}s ago`;
+  if (elapsed < 3600_000) return `Saved · ${Math.floor(elapsed / 60_000)}m ago`;
+  return `Saved · ${savedAt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`;
 }
