@@ -253,9 +253,34 @@ export async function getReviewQueue(): Promise<ReviewCard[]> {
   return read<ReviewCard[]>("review", SEED_REVIEW);
 }
 
-/* Headline endpoint — creates + persists a new source end to end.
-   This one becomes a Claude API call later; the return shape stays identical. */
-export async function summarize(req: SummarizeRequest): Promise<SummarizeResponse> {
+/* Persists a fully-formed SummarizeResponse to localStorage.
+   The real client `summarize()` (in lib/api/summarize-client.ts) calls
+   the /api/summarize route and then hands the result here. */
+export function persistSummarizeResponse(res: SummarizeResponse): void {
+  ensureSeeded();
+  const { source, summary, takeaways, highlights } = res;
+
+  const existingSources = read<Source[]>("sources", SEED_SOURCES);
+  /* Dedup by id — newer wins, moves to the front. */
+  const filteredSources = existingSources.filter(s => s.id !== source.id);
+  write("sources", [source, ...filteredSources]);
+
+  const sumMap = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
+  sumMap[source.id] = summary;
+  write("summaries", sumMap);
+
+  const tkMap = read<Record<string, Takeaway[]>>("takeaways", SEED_TAKEAWAYS);
+  tkMap[source.id] = takeaways;
+  write("takeaways", tkMap);
+
+  const hlMap = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  hlMap[source.id] = highlights;
+  write("highlights", hlMap);
+}
+
+/* Mock summarize — kept exported for offline dev / tests. The default
+   `summarize()` exported from lib/api/index.ts now calls the real route. */
+export async function mockSummarize(req: SummarizeRequest): Promise<SummarizeResponse> {
   ensureSeeded();
   await sleep(900); /* mimic AI latency */
 
@@ -281,33 +306,20 @@ export async function summarize(req: SummarizeRequest): Promise<SummarizeRespons
     sourceId: id,
     thesis: "A calm, beginner-friendly summary of the source you pasted.",
     paragraphs: [
-      "This is where Claude will return a distilled, editorial summary of the source — covering the core thesis in plain words and a few paragraphs of context.",
-      "While we're wired to the mock API, this paragraph stands in so the UI and state flow can be verified end to end. When we swap in the real Claude integration, only this function changes — the shape of the response is identical.",
-      "Takeaways, highlights, and your personal notes below all hang off the same source ID, so everything persists together.",
+      "[MOCK] This is where Claude returns a distilled, editorial summary of the source.",
+      "[MOCK] Used as offline fallback when the real /api/summarize route isn't available.",
     ],
   };
 
   const takeaways: Takeaway[] = [
-    { id: `tk-${id}-1`, title: "Main idea, in one sentence.",              detail: "The single most important takeaway lives here, written as a sentence you could carry with you all week." },
-    { id: `tk-${id}-2`, title: "Why it might be counterintuitive.",         detail: "A note on where the idea pushes back against the usual way of thinking about it." },
-    { id: `tk-${id}-3`, title: "The worked example worth remembering.",     detail: "One concrete case that makes the abstract point land." },
+    { id: `tk-${id}-1`, title: "Main idea, in one sentence.",              detail: "[MOCK] The single most important takeaway lives here." },
+    { id: `tk-${id}-2`, title: "Why it might be counterintuitive.",         detail: "[MOCK] Where the idea pushes back on the usual framing." },
+    { id: `tk-${id}-3`, title: "The worked example worth remembering.",     detail: "[MOCK] One concrete case that makes the abstract point land." },
   ];
 
-  const highlights: Highlight[] = [];
-
-  /* Persist everything keyed by source ID. */
-  write("sources",    [source, ...existingSources]);
-  const sumMap = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
-  sumMap[id] = summary;
-  write("summaries", sumMap);
-  const tkMap = read<Record<string, Takeaway[]>>("takeaways", SEED_TAKEAWAYS);
-  tkMap[id] = takeaways;
-  write("takeaways", tkMap);
-  const hlMap = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
-  hlMap[id] = highlights;
-  write("highlights", hlMap);
-
-  return { source, summary, takeaways, highlights };
+  const response: SummarizeResponse = { source, summary, takeaways, highlights: [] };
+  persistSummarizeResponse(response);
+  return response;
 }
 
 function slugify(s: string): string {
