@@ -136,9 +136,9 @@ export default function Landing() {
         </div>
 
         <h1 className="display reveal" style={{
-          fontSize: "clamp(44px, 6vw, 84px)",
+          fontSize: "clamp(40px, 5.5vw, 72px)",
           margin: "0 0 28px",
-          maxWidth: 1000,
+          maxWidth: 1180,
           animationDelay: "160ms",
         }}>
           {t("hero.title.a")} <em style={{ color: "var(--accent-deep)", fontStyle: "italic" }}>{t("hero.title.em")}</em>
