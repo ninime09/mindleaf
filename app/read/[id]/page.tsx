@@ -801,7 +801,7 @@ function DynamicDetail({ id }: { id: string }) {
             <section id="sec-takeaways" style={{ marginBottom: 56 }}>
               <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.take")}</div>
               <h2 className="display" style={{ fontSize: 32, margin: "0 0 24px", letterSpacing: "-0.02em" }}>
-                {t("det.take.h")}
+                {takeawayHeading(takeaways.length, lang)}
               </h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {takeaways.map((tk, i) => (
@@ -1181,6 +1181,23 @@ function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/* Build the takeaways section heading from the actual count, in the
+   user's language. Singular gets the singular noun; 1–10 use written
+   numerals (one / 三); 11+ fall back to digits. */
+function takeawayHeading(count: number, lang: "en" | "zh"): string {
+  if (lang === "zh") {
+    const zhNum = ["零", "一", "两", "三", "四", "五", "六", "七", "八", "九", "十"];
+    if (count === 1) return "一个想法，值得带走。";
+    const num = count >= 2 && count <= 10 ? zhNum[count] : String(count);
+    return `${num}点想法，值得带走。`;
+  }
+  const enNum = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  if (count === 1) return "One idea worth carrying.";
+  const word = count >= 2 && count <= 10 ? enNum[count] : String(count);
+  const cap = word.charAt(0).toUpperCase() + word.slice(1);
+  return `${cap} ideas worth carrying.`;
 }
 
 function estimateReadMinutes(summary: Summary | null, takeaways: Takeaway[]): number {
