@@ -23,6 +23,9 @@ export type Summary = {
   sourceId: string;
   thesis: string;     /* one-line "what is this" */
   paragraphs: string[]; /* long form */
+  memorableQuote?: string;        /* the one sentence worth remembering */
+  beginnerExplanation?: string[]; /* a separate explanation for someone new to the idea */
+  lang?: "en" | "zh";             /* the language the summary was generated in */
 };
 
 export type Takeaway = {
@@ -66,7 +69,7 @@ export type ReviewCard = {
 export type SummarizeRequest = {
   url: string;
   type: SourceType;
-  /* Later: user preferences, reading level, language, etc. */
+  lang?: "en" | "zh";  /* target output language; defaults to en on the server */
 };
 
 export type SummarizeResponse = {

@@ -493,6 +493,7 @@ function DynamicDetail({ id }: { id: string }) {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [activeSection, setActiveSection] = useState<SectionId>("summary");
   const { notes, setNotes, savedAt } = useNotes(id, "");
 
   useEffect(() => {
@@ -510,6 +511,25 @@ function DynamicDetail({ id }: { id: string }) {
     });
     return () => { cancelled = true; };
   }, [id]);
+
+  /* Scroll spy — same approach as CanonicalDetail. */
+  useEffect(() => {
+    if (loading || notFound) return;
+    const ids: SectionId[] = ["summary", "takeaways", "remember", "explain", "notes"];
+    const handler = () => {
+      for (const sid of ids) {
+        const el = document.getElementById(`sec-${sid}`);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.top < 200 && r.bottom > 200) {
+          setActiveSection(sid);
+          break;
+        }
+      }
+    };
+    window.addEventListener("scroll", handler, { passive: true });
+    return () => window.removeEventListener("scroll", handler);
+  }, [loading, notFound]);
 
   if (loading) {
     return (
@@ -548,12 +568,34 @@ function DynamicDetail({ id }: { id: string }) {
     );
   }
 
+  const sections: { id: SectionId; label: string; show: boolean }[] = [
+    { id: "summary",   label: t("det.sec.summary"), show: !!summary },
+    { id: "takeaways", label: t("det.sec.take"),    show: takeaways.length > 0 },
+    { id: "remember",  label: t("det.sec.rem"),     show: !!summary?.memorableQuote },
+    { id: "explain",   label: t("det.sec.explain"), show: !!(summary?.beginnerExplanation && summary.beginnerExplanation.length) },
+    { id: "notes",     label: t("det.sec.notes"),   show: true },
+  ];
+
+  const readMin = estimateReadMinutes(summary, takeaways);
+  const typeColor: "blue" | "violet" | "sage" =
+    source.type === "video" ? "blue" : source.type === "podcast" ? "violet" : "sage";
+  const typeLabel = source.type === "video"
+    ? t("det.meta.video")
+    : source.type === "podcast"
+      ? t("dash.mode.pod")
+      : t("dash.mode.blog");
+  const heroSpread = source.type === "video"
+    ? "radial-gradient(600px 300px at 30% 40%, oklch(0.88 0.06 235 / 0.8), transparent 60%), radial-gradient(400px 300px at 80% 70%, oklch(0.90 0.05 210 / 0.7), transparent 60%), linear-gradient(180deg, oklch(0.94 0.03 235), oklch(0.90 0.04 230))"
+    : source.type === "podcast"
+      ? "radial-gradient(600px 300px at 30% 40%, oklch(0.90 0.05 290 / 0.8), transparent 60%), radial-gradient(400px 300px at 80% 70%, oklch(0.92 0.04 270 / 0.7), transparent 60%), linear-gradient(180deg, oklch(0.95 0.03 290), oklch(0.92 0.04 285))"
+      : "radial-gradient(600px 300px at 30% 40%, oklch(0.94 0.05 85 / 0.8), transparent 60%), radial-gradient(400px 300px at 80% 70%, oklch(0.95 0.04 70 / 0.7), transparent 60%), linear-gradient(180deg, oklch(0.96 0.03 85), oklch(0.94 0.04 80))";
+
   return (
     <div style={{ position: "relative", zIndex: 2, minHeight: "100vh" }}>
       {/* Top bar */}
       <div style={{ position: "sticky", top: 0, zIndex: 40, padding: "16px 24px 0" }}>
         <div className="glass-strong" style={{
-          maxWidth: 1100, margin: "0 auto",
+          maxWidth: 1400, margin: "0 auto",
           padding: "10px 14px",
           display: "flex", alignItems: "center", gap: 12,
           borderRadius: 16,
@@ -565,7 +607,7 @@ function DynamicDetail({ id }: { id: string }) {
             <Icon name="notebook" size={13}/> {t("nav.notebook")}
           </button>
           <div style={{ width: 1, height: 18, background: "rgba(23,42,82,0.1)" }}/>
-          <div style={{ fontSize: 12.5, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
             <Icon name={source.type} size={12}/>
             <span className="truncate" style={{ color: "var(--ink-900)", fontWeight: 500 }}>{source.title}</span>
           </div>
@@ -577,40 +619,125 @@ function DynamicDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 24px 120px" }}>
-        <article>
+      <div style={{
+        maxWidth: 1400, margin: "0 auto",
+        padding: "24px 24px 120px",
+        display: "grid",
+        gridTemplateColumns: "200px 1fr 320px",
+        gap: 32,
+      }}>
+        {/* LEFT — section nav + read time */}
+        <aside style={{ position: "sticky", top: 90, alignSelf: "start" }}>
+          <div className="eyebrow" style={{ marginBottom: 12, padding: "0 8px" }}>{t("det.onThisPage")}</div>
+          <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {sections.filter(s => s.show).map(s => {
+              const active = s.id === activeSection;
+              return (
+                <a key={s.id} href={`#sec-${s.id}`}
+                  onClick={() => setActiveSection(s.id)}
+                  style={{
+                    padding: "7px 12px",
+                    fontSize: 12.5,
+                    color: active ? "var(--ink-900)" : "var(--ink-500)",
+                    fontWeight: active ? 550 : 450,
+                    borderLeft: active ? "1.5px solid var(--accent-deep)" : "1.5px solid rgba(23,42,82,0.08)",
+                    textDecoration: "none",
+                    transition: "all 200ms var(--ease)",
+                    letterSpacing: "-0.005em",
+                  }}>
+                  {s.label}
+                </a>
+              );
+            })}
+          </nav>
+
+          <div className="glass" style={{ marginTop: 24, padding: 16, borderRadius: 14 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>{t("det.readtime")}</div>
+            <div className="display" style={{ fontSize: 26, letterSpacing: "-0.02em", margin: 0 }}>
+              {lang === "zh" ? `${readMin} 分钟` : `${readMin} min`}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink-500)", marginTop: 4 }}>
+              {lang === "zh" ? "约略估算" : "approximate"}
+            </div>
+          </div>
+        </aside>
+
+        {/* CENTER — article */}
+        <article style={{ maxWidth: 720 }}>
           {/* Header */}
           <div className="reveal">
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-              <Tag color={source.type === "video" ? "blue" : source.type === "podcast" ? "violet" : "sage"}>
-                {source.type === "video" ? t("det.meta.video") : source.type === "podcast" ? t("dash.mode.pod") : t("dash.mode.blog")}
-              </Tag>
+              <Tag color={typeColor}>{typeLabel}</Tag>
               <span style={{ fontSize: 11.5, color: "var(--ink-400)", fontFamily: "var(--font-mono)" }}>
-                {new Date(source.addedAt).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" })}
+                {new Date(source.addedAt).toLocaleDateString(
+                  lang === "zh" ? "zh-CN" : "en-US",
+                  { year: "numeric", month: "long", day: "numeric" }
+                )}
               </span>
             </div>
 
             <h1 className="display" style={{
-              fontSize: "clamp(36px, 5vw, 56px)", margin: "0 0 20px",
+              fontSize: "clamp(40px, 5vw, 60px)", margin: "0 0 20px",
               letterSpacing: "-0.025em", lineHeight: 1.05,
               wordBreak: "keep-all", overflowWrap: "break-word",
             }}>
               {source.title}
             </h1>
 
-            <div style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 32 }}>
-              {source.author} · <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-deep)", textDecoration: "none" }}>{lang === "zh" ? "查看原文" : "View source"} <Icon name="link" size={11} style={{ verticalAlign: -1 }}/></a>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13.5, color: "var(--ink-700)" }}>{source.author}</div>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <a href={source.url} target="_blank" rel="noreferrer" className="chip" style={{ textDecoration: "none" }}>
+                  <Icon name="link" size={11}/> {t("det.chip.source")}
+                </a>
+              </div>
+            </div>
+
+            {/* Hero placeholder — calm gradient with the source title floating on glass */}
+            <div style={{
+              position: "relative", height: 220,
+              borderRadius: 18, overflow: "hidden",
+              border: "0.5px solid rgba(23,42,82,0.08)",
+              background: heroSpread,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              marginBottom: 40,
+            }}>
+              <div style={{
+                position: "absolute", inset: 0,
+                backgroundImage: "repeating-linear-gradient(135deg, rgba(255,255,255,0.3) 0 1px, transparent 1px 22px)",
+              }}/>
+              <div style={{
+                position: "relative",
+                background: "rgba(255,255,255,0.65)",
+                backdropFilter: "blur(20px) saturate(160%)",
+                WebkitBackdropFilter: "blur(20px) saturate(160%)",
+                border: "1px solid rgba(255,255,255,0.7)",
+                padding: "16px 20px", borderRadius: 14,
+                display: "flex", alignItems: "center", gap: 12,
+                maxWidth: "80%",
+              }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: "50%",
+                  background: "oklch(0.42 0.10 248)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "white", flexShrink: 0,
+                }}><Icon name={source.type} size={15}/></div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 550 }} className="truncate">{source.title}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{source.author}</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Summary */}
+          {/* SUMMARY */}
           {summary && (
-            <section style={{ marginBottom: 48 }}>
+            <section id="sec-summary" style={{ marginBottom: 56 }}>
               <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.summary")}</div>
-              <h2 className="display" style={{ fontSize: 28, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
+              <h2 className="display" style={{ fontSize: 32, margin: "0 0 20px", letterSpacing: "-0.02em", lineHeight: 1.15 }}>
                 {summary.thesis}
               </h2>
-              <div style={{ fontSize: 16, lineHeight: 1.7, color: "var(--ink-700)", fontFamily: "var(--font-display)" }}>
+              <div style={{ fontSize: 17, lineHeight: 1.7, color: "var(--ink-700)", fontFamily: "var(--font-display)", letterSpacing: "-0.005em" }}>
                 {summary.paragraphs.map((p, i) => (
                   <p key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{p}</p>
                 ))}
@@ -618,23 +745,23 @@ function DynamicDetail({ id }: { id: string }) {
             </section>
           )}
 
-          {/* Takeaways */}
+          {/* TAKEAWAYS */}
           {takeaways.length > 0 && (
-            <section style={{ marginBottom: 48 }}>
+            <section id="sec-takeaways" style={{ marginBottom: 56 }}>
               <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.take")}</div>
-              <h2 className="display" style={{ fontSize: 28, margin: "0 0 20px", letterSpacing: "-0.02em" }}>
+              <h2 className="display" style={{ fontSize: 32, margin: "0 0 24px", letterSpacing: "-0.02em" }}>
                 {t("det.take.h")}
               </h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {takeaways.map((tk, i) => (
-                  <div key={tk.id} className="glass" style={{ padding: 20, borderRadius: 14, display: "flex", gap: 16 }}>
+                  <div key={tk.id} className="glass" style={{ padding: 22, borderRadius: 16, display: "flex", gap: 18 }}>
                     <div className="display" style={{
-                      fontSize: 26, color: "var(--accent-deep)",
-                      letterSpacing: "-0.02em", flexShrink: 0, width: 38,
+                      fontSize: 30, color: "var(--accent-deep)",
+                      letterSpacing: "-0.02em", flexShrink: 0, width: 44,
                     }}>{String(i + 1).padStart(2, "0")}</div>
                     <div>
-                      <div style={{ fontSize: 15, fontWeight: 550, marginBottom: 4, letterSpacing: "-0.01em" }}>{tk.title}</div>
-                      <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--ink-500)" }}>{tk.detail}</div>
+                      <div style={{ fontSize: 16, fontWeight: 550, marginBottom: 6, letterSpacing: "-0.01em" }}>{tk.title}</div>
+                      <div style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ink-500)" }}>{tk.detail}</div>
                     </div>
                   </div>
                 ))}
@@ -642,37 +769,56 @@ function DynamicDetail({ id }: { id: string }) {
             </section>
           )}
 
-          {/* Highlights (only if any) */}
-          {highlights.length > 0 && (
-            <section style={{ marginBottom: 48 }}>
-              <div className="eyebrow" style={{ marginBottom: 14 }}>{t("det.hls")}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {highlights.map(h => (
-                  <div key={h.id} style={{
-                    padding: "10px 14px", borderRadius: 10,
-                    background: `oklch(0.96 0.03 ${h.hue} / 0.55)`,
-                    borderLeft: `2px solid oklch(0.68 0.10 ${h.hue})`,
-                    fontSize: 13.5, lineHeight: 1.55, color: "var(--ink-700)",
+          {/* REMEMBER */}
+          {summary?.memorableQuote && (
+            <section id="sec-remember" style={{ marginBottom: 56 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.rem")}</div>
+              <h2 className="display" style={{ fontSize: 32, margin: "0 0 24px", letterSpacing: "-0.02em" }}>
+                {t("det.rem.h")}
+              </h2>
+              <div className="glass-strong" style={{
+                padding: "36px 40px",
+                borderRadius: 22,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.7), oklch(0.95 0.03 235 / 0.4))",
+                position: "relative", overflow: "hidden",
+              }}>
+                <Orb size={300} color="oklch(0.85 0.07 235)" style={{ top: -120, right: -80 }}/>
+                <div style={{ position: "relative" }}>
+                  <Icon name="quote" size={20} style={{ color: "var(--accent)", marginBottom: 12 }}/>
+                  <blockquote className="display" style={{
+                    margin: 0, fontSize: 26, lineHeight: 1.3,
+                    color: "var(--ink-900)", letterSpacing: "-0.015em",
+                    fontStyle: "italic", maxWidth: 580,
                   }}>
-                    {h.timestamp && (
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-400)", marginBottom: 3 }}>
-                        @ {h.timestamp}
-                      </div>
-                    )}
-                    &ldquo;{h.text}&rdquo;
-                  </div>
+                    {summary.memorableQuote}
+                  </blockquote>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* EXPLAIN */}
+          {summary?.beginnerExplanation && summary.beginnerExplanation.length > 0 && (
+            <section id="sec-explain" style={{ marginBottom: 56 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>{t("det.sec.explain")}</div>
+              <h2 className="display" style={{ fontSize: 32, margin: "0 0 20px", letterSpacing: "-0.02em" }}>
+                {t("det.ex.h")}
+              </h2>
+              <div style={{ fontSize: 16, lineHeight: 1.75, color: "var(--ink-700)" }}>
+                {summary.beginnerExplanation.map((p, i) => (
+                  <p key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{p}</p>
                 ))}
               </div>
             </section>
           )}
 
-          {/* Notes */}
-          <section>
+          {/* NOTES */}
+          <section id="sec-notes" style={{ marginBottom: 40 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
               <div className="eyebrow">{t("det.notes.eyebrow")}</div>
               <span style={{ fontSize: 11, color: "var(--ink-400)" }}>{savedLabel(savedAt, lang, t("det.notes.saved"))}</span>
             </div>
-            <h2 className="display" style={{ fontSize: 28, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
+            <h2 className="display" style={{ fontSize: 32, margin: "0 0 20px", letterSpacing: "-0.02em" }}>
               {t("det.notes.h")}
             </h2>
             <textarea
@@ -688,16 +834,108 @@ function DynamicDetail({ id }: { id: string }) {
                 boxShadow: "0 0 0 0.5px rgba(23,42,82,0.06)",
                 borderRadius: 16,
                 padding: 20,
-                fontFamily: "var(--font-display)", fontSize: 16, lineHeight: 1.7,
+                fontFamily: "var(--font-display)", fontSize: 17, lineHeight: 1.7,
                 color: "var(--ink-900)", resize: "vertical", outline: "none",
                 letterSpacing: "-0.005em",
               }}
             />
           </section>
         </article>
+
+        {/* RIGHT — highlights + metadata */}
+        <aside style={{ position: "sticky", top: 90, alignSelf: "start", display: "flex", flexDirection: "column", gap: 14 }}>
+          {highlights.length > 0 && (
+            <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <span className="eyebrow">{t("det.hls")}</span>
+                <span style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)" }}>{highlights.length}</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {highlights.map(h => (
+                  <div key={h.id} style={{
+                    padding: "10px 12px", borderRadius: 10,
+                    background: `oklch(0.96 0.03 ${h.hue} / 0.55)`,
+                    borderLeft: `2px solid oklch(0.68 0.10 ${h.hue})`,
+                    fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-700)",
+                  }}>
+                    {h.timestamp && (
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--ink-400)", marginBottom: 3 }}>
+                        @ {h.timestamp}
+                      </div>
+                    )}
+                    &ldquo;{h.text}&rdquo;
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>{t("det.meta.h")}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
+              <MetaRow label={t("det.meta.source")} value={prettyHost(source.url)}/>
+              <MetaRow label={t("det.meta.added")} value={new Date(source.addedAt).toLocaleDateString(
+                lang === "zh" ? "zh-CN" : "en-US",
+                { year: "numeric", month: "long", day: "numeric" }
+              )}/>
+              {source.durationSec && (
+                <MetaRow label={t("det.meta.dur")} value={formatDuration(source.durationSec)}/>
+              )}
+              {source.tags.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <span style={{ color: "var(--ink-400)" }}>{lang === "zh" ? "标签" : "Tags"}</span>
+                  <span style={{
+                    color: "var(--ink-700)", textAlign: "right",
+                    display: "inline-flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end",
+                  }}>
+                    {source.tags.map(tg => (
+                      <span key={tg} style={{
+                        fontSize: 10.5, color: "var(--ink-500)",
+                        padding: "2px 7px", background: "rgba(23,42,82,0.05)",
+                        borderRadius: 999,
+                      }}>#{tg}</span>
+                    ))}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
+}
+
+function MetaRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+      <span style={{ color: "var(--ink-400)" }}>{label}</span>
+      <span style={{ color: "var(--ink-700)", fontWeight: 500, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+function prettyHost(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+
+function formatDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function estimateReadMinutes(summary: Summary | null, takeaways: Takeaway[]): number {
+  let words = 0;
+  const count = (s: string) => s.trim().split(/\s+/).length;
+  if (summary) {
+    words += count(summary.thesis);
+    summary.paragraphs.forEach(p => { words += count(p); });
+    if (summary.memorableQuote) words += count(summary.memorableQuote);
+    summary.beginnerExplanation?.forEach(p => { words += count(p); });
+  }
+  takeaways.forEach(tk => { words += count(tk.title) + count(tk.detail); });
+  return Math.max(1, Math.round(words / 220));
 }
 
 /* ============================================================

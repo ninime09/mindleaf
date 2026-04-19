@@ -31,16 +31,19 @@ export default function Landing() {
   const [mode, setMode] = useState<Mode>("blog");
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submit = async () => {
     const value = url.trim();
     if (!value || submitting) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      const res = await summarize({ url: value, type: mode });
+      const res = await summarize({ url: value, type: mode, lang });
       router.push(`/read/${res.source.id}`);
     } catch (err) {
-      console.error("summarize failed", err);
+      const message = err instanceof Error ? err.message : "Something went wrong.";
+      setSubmitError(message);
       setSubmitting(false);
     }
   };
@@ -210,6 +213,27 @@ export default function Landing() {
                 </button>
               ))}
             </div>
+
+            {submitError && (
+              <div role="alert" style={{
+                marginTop: 14, padding: "10px 14px",
+                borderRadius: 12,
+                background: "oklch(0.96 0.04 25 / 0.55)",
+                border: "0.5px solid oklch(0.78 0.10 25 / 0.5)",
+                color: "oklch(0.38 0.10 25)",
+                fontSize: 13, lineHeight: 1.5,
+                display: "flex", alignItems: "flex-start", gap: 10,
+              }}>
+                <Icon name="bolt" size={14} style={{ marginTop: 2, flexShrink: 0 }}/>
+                <span style={{ flex: 1 }}>{submitError}</span>
+                <button onClick={() => setSubmitError(null)} aria-label="Dismiss" style={{
+                  border: "none", background: "transparent", cursor: "pointer",
+                  color: "inherit", padding: 0, opacity: 0.7,
+                }}>
+                  <Icon name="x" size={12}/>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>

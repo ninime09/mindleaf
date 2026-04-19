@@ -3,9 +3,9 @@ import "server-only";
 /* In-memory rate limiter and daily budget cap. Resets on process restart;
    for production swap the Map for Upstash Redis or similar. */
 
-const PER_IP_MAX = 5;
+const PER_IP_MAX = 30;
 const PER_IP_WINDOW_MS = 60 * 60 * 1000;        /* 1 hour */
-const DAILY_BUDGET = 100;                        /* total summarize calls per UTC day */
+const DAILY_BUDGET = 200;                        /* total summarize calls per UTC day */
 
 type IpEntry = { count: number; resetAt: number };
 const ipBuckets = new Map<string, IpEntry>();

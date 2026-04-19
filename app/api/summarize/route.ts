@@ -13,68 +13,67 @@ export const runtime = "nodejs";
 
 /* ============================================================
    Structured output schema — what Claude must return.
+   String min/max are client-side in the SDK; keep lowers for
+   sanity and rely on descriptions + the system prompt to steer
+   upper bounds. Order of fields here mirrors the UI's section
+   order on the Detail page, which reads a bit better for Claude.
    ============================================================ */
-/* Note: string min/max constraints aren't enforced server-side — the
-   Anthropic SDK validates them client-side. We keep the bounds loose
-   here and rely on the system prompt + field descriptions to steer
-   Claude to the right lengths. */
 const SummaryOutput = z.object({
   title: z.string().min(1).describe(
-    "A 1–10 word title for the source. Prefer the source's own title if present; otherwise write a clean, calm rephrasing."
+    "1–10 words. Prefer the source's own title; otherwise write a clean, calm rephrasing."
   ),
-  language: z.enum(["en", "zh"]).describe(
-    "Primary language of the source content (en or zh). Use this language for thesis, paragraphs, takeaways, and tags."
+  tags: z.array(z.string().min(2)).min(1).max(5).describe(
+    "1–5 lowercase topic tags useful for grouping in a notebook (e.g. 'attention', 'craft', 'focus'). Not a restatement of the title."
   ),
-  thesis: z.string().min(20).describe(
-    "One sentence (target 15–35 words) that captures the single most important idea. Plain words. No filler."
+  thesis: z.string().min(15).describe(
+    "Target 10–22 words. One sentence. The single most important claim, stated plainly. No 'the author argues that…' preamble."
   ),
-  paragraphs: z.array(z.string().min(40)).min(2).max(5).describe(
-    "2–4 paragraphs of editorial summary. Each paragraph 2–5 sentences. Beginner-friendly, calm, no marketing voice."
+  paragraphs: z.array(z.string().min(30)).min(2).max(3).describe(
+    "Exactly 2 or 3 paragraphs. Each paragraph 2–4 sentences. Cover what the source actually says — concrete, editorial, calm. Cut everything that doesn't earn its place."
   ),
   takeaways: z.array(z.object({
-    title: z.string().min(5).describe("A punchy 1-line takeaway (target ≤ 120 chars), like a mini-headline."),
-    detail: z.string().min(20).describe("One or two sentences (target ≤ 320 chars) expanding the takeaway with the why or how."),
-  })).min(3).max(5),
-  tags: z.array(z.string().min(2)).min(1).max(5).describe(
-    "1–5 lowercase topic tags useful for organizing this in a notebook (e.g. 'attention', 'craft', 'ai')."
+    title: z.string().min(5).describe("≤ 80 chars. One punchy line the reader could carry with them."),
+    detail: z.string().min(20).describe("One sentence, 18–35 words. Why it matters or how it's grounded in the source."),
+  })).min(3).max(4),
+  memorableQuote: z.string().min(15).describe(
+    "One sentence, target 10–25 words. The single line worth remembering when everything else fades. If the source had a quotable line that captures it, use that; otherwise paraphrase the thesis in a more memorable way. No quote marks."
+  ),
+  beginnerExplanation: z.array(z.string().min(30)).min(2).max(3).describe(
+    "2 or 3 short paragraphs, 2–3 sentences each, explaining the idea to someone new using a simple metaphor or everyday scenario. Different angle than the summary — use analogy, not the piece's own structure."
   ),
 });
 
 type SummaryOutputT = z.infer<typeof SummaryOutput>;
 
 /* ============================================================
-   System prompt — kept stable so prompt caching can engage once
-   the prefix grows past Haiku 4.5's ~4096-token cache minimum.
-   For now the marker is a no-op write but harmless; as we add
-   few-shot examples or longer style guidance, caching activates
-   automatically without further code changes.
+   System prompt — stable across requests so a future version
+   long enough to hit Haiku 4.5's ~4096-token cache minimum can
+   be read back at ~0.1× input cost without changing this file.
    ============================================================ */
-const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, podcasts, and videos into calm, beginner-friendly explanations meant to live in a personal knowledge notebook.
+const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, podcasts, and videos into calm, beginner-friendly notes for a personal knowledge notebook.
 
 # Voice
-- Calm, plainspoken, editorial. Write like a thoughtful friend explaining a piece they just read, not like marketing copy.
-- Beginner-friendly: assume the reader has not read the source. Define jargon the first time it appears.
-- Confident but not loud. No exclamation points. No filler words ("very", "really", "basically", "essentially") unless they earn their keep.
-- Prefer concrete sentences over abstract ones. If you can replace a noun phrase with a worked example, do it.
-- Quotes are rare and earned. Lift them only when the original phrasing is irreplaceable.
+- Calm, plainspoken, editorial. Write like a thoughtful friend who just read the piece, not like marketing copy.
+- Confident but not loud. No exclamation points. No em-dashes as filler. Avoid "very", "really", "basically", "essentially" unless they earn their keep.
+- Prefer concrete sentences over abstract ones. When you can replace an abstraction with a worked example from the source, do it.
+- Quotes are rare and earned. Lift them only when the original phrasing is irreplaceable — otherwise paraphrase.
 
-# Output
-- Detect the source's primary language and write the entire output in that language. If the source is mostly Chinese, write in Chinese; otherwise English. Set the \`language\` field to "en" or "zh".
-- Title: 1–10 words. Match the source's own title where it exists; otherwise compose one in the same calm voice.
-- Thesis: one sentence, 15–35 words, that captures the single most important idea.
-- Paragraphs: 2–4 paragraphs total. Each is 2–5 sentences. Together they should let the reader understand the piece without having read it.
-- Takeaways: 3–5 entries. Each \`title\` is a punchy mini-headline; each \`detail\` is one or two sentences that say why the takeaway matters or how it's grounded in the source.
-- Tags: 1–5 lowercase, hyphen-free single words or short phrases. These are search-friendly topic tags, not the title repeated.
+# Discipline
+- **Cut ruthlessly.** If a sentence doesn't add something a reader would miss, delete it.
+- Do not repeat yourself across sections. The thesis, takeaway titles, memorable quote, and beginner explanation must each say something the others don't.
+- Stay within the length targets in each field's description. Shorter is better than longer. If the source is thin, return a shorter honest summary rather than padded detail.
+- Never invent facts. If something is implied but not stated, say so plainly.
+- Do not start the thesis with "The article", "The author", "This piece", "This essay" or similar throat-clearing. Start with the idea itself.
 
-# What to avoid
-- Do not include the URL, byline, publication date, or boilerplate metadata in your prose.
-- Do not start the thesis with "The article", "The author", "This piece" or similar throat-clearing.
-- Do not pad. If the source is thin, return a shorter, honest summary rather than fabricated detail.
-- Do not invent facts that are not in the source. If something is implied but not stated, say so.
+# Output language
+- The user will specify a target language (en or zh) in their message. Write **every field** — title, tags, thesis, paragraphs, takeaway titles and details, memorable quote, beginner explanation — in that language.
+- If the target is 中文 and the source is English, translate faithfully into natural, native-feeling Chinese — not word-for-word. If the source is Chinese and the target is English, same in reverse.
+- Tags are lowercase. In 中文 they can be natural short phrases (e.g. "注意力", "克制", "写作"); skip English transliteration.
 
-# Constraints
-- Match the source's language for thesis, paragraphs, takeaways, and tags. The title can stay in the source's language.
-- Stay in voice across all fields. Tags are lowercase. Titles use sentence case (or the source's own title's case if you're quoting it).`;
+# Boilerplate to strip
+- Do not include the URL, byline, publication date, or navigation scaffolding in your prose.
+- If the source has repeated nav/footer text interleaved with content, ignore it.
+- If the page appears to be a listing/index rather than an article, return a shorter summary explaining that, instead of pretending there's a thesis.`;
 
 /* ============================================================
    POST /api/summarize
@@ -82,6 +81,7 @@ const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, po
 const Body = z.object({
   url: z.string().url(),
   type: z.enum(["blog", "podcast", "video"]),
+  lang: z.enum(["en", "zh"]).optional(),
 });
 
 export async function POST(req: Request) {
@@ -105,6 +105,7 @@ export async function POST(req: Request) {
   } catch (err) {
     return jsonError(400, err instanceof z.ZodError ? "Invalid request body." : "Body must be JSON.");
   }
+  const targetLang: "en" | "zh" = body.lang ?? "en";
 
   /* API key check */
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -125,6 +126,7 @@ export async function POST(req: Request) {
   let output: SummaryOutputT;
   try {
     const userPrompt = [
+      `Target output language: ${targetLang === "zh" ? "中文 (zh)" : "English (en)"}`,
       `Source URL: ${fetched.url}`,
       fetched.title ? `Source title (as found on the page): ${fetched.title}` : null,
       "",
@@ -132,16 +134,14 @@ export async function POST(req: Request) {
       fetched.text,
       "--- SOURCE TEXT ENDS ---",
       "",
-      "Summarize this source according to the system instructions. Return only the structured object.",
+      "Summarize this source per the system instructions. Return only the structured object. Write every field in the target language above.",
     ].filter(Boolean).join("\n");
 
     /* Cache breakpoint on the system block only — once SYSTEM_PROMPT
-       grows past Haiku 4.5's ~4096-token cache minimum (e.g. by adding
-       few-shot examples), every subsequent request will read it back at
-       ~0.1× input cost. Until then this is a silent no-op, which is fine.
-       Do NOT add a top-level cache_control here: that would cache the
-       per-URL user message too, paying the 1.25× write premium for an
-       entry the next request (different URL) can never reuse. */
+       grows past Haiku 4.5's ~4096-token cache minimum, every request
+       reads it back at ~0.1× input cost. Until then it's a silent
+       no-op. Don't add a top-level cache_control — that would cache
+       the per-URL user message no other request can reuse. */
     const response = await client.messages.parse({
       model: "claude-haiku-4-5",
       max_tokens: 4000,
@@ -155,11 +155,10 @@ export async function POST(req: Request) {
     }
     output = response.parsed_output;
 
-    /* Light cache observability — useful while tuning the prompt. */
     if (process.env.NODE_ENV !== "production") {
       const u = response.usage;
       console.log(
-        `[summarize] cache_read=${u.cache_read_input_tokens ?? 0} ` +
+        `[summarize] lang=${targetLang} cache_read=${u.cache_read_input_tokens ?? 0} ` +
         `cache_create=${u.cache_creation_input_tokens ?? 0} ` +
         `input=${u.input_tokens} output=${u.output_tokens}`
       );
@@ -197,6 +196,9 @@ export async function POST(req: Request) {
     sourceId: id,
     thesis: output.thesis,
     paragraphs: output.paragraphs,
+    memorableQuote: output.memorableQuote,
+    beginnerExplanation: output.beginnerExplanation,
+    lang: targetLang,
   };
   const takeaways: Takeaway[] = output.takeaways.map((t, i) => ({
     id: `tk-${id}-${i + 1}`,
@@ -223,9 +225,6 @@ function jsonError(status: number, message: string, extraHeaders: Record<string,
 }
 
 function uniqueIdFromUrl(url: string): string {
-  /* Slug + short timestamp suffix to avoid collisions when the same URL
-     is summarized twice. The client's localStorage stays the source of
-     truth for whether two slugs refer to the same source. */
   const base = slugify(url) || "source";
   const suffix = Date.now().toString(36).slice(-5);
   return `${base.slice(0, 50)}-${suffix}`;
