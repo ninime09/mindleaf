@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Progress, Segmented } from "@/components/primitives";
-import { listSources, type Source } from "@/lib/api";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { deleteSource, listSources, type Source } from "@/lib/api";
 
 type View = "grid" | "list" | "review";
 type CollectionId = "all" | "ml" | "design" | "phil" | "writing" | "learn";
@@ -28,6 +29,7 @@ export default function Notebook() {
   const [q, setQ] = useState("");
 
   const [sources, setSources] = useState<Source[]>([]);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +41,21 @@ export default function Notebook() {
   }, []);
 
   const openSource = (id: string) => router.push(`/read/${id}`);
+
+  const askDelete = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setPendingDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    await deleteSource(id);
+    setSources(prev => prev.filter(s => s.id !== id));
+  };
+
+  const pendingSource = sources.find(s => s.id === pendingDeleteId);
 
   const collections: { id: CollectionId; label: string; count: number }[] = useMemo(() => [
     { id: "all",     label: t("nbp.col.all"),     count: sources.length },
@@ -236,7 +253,32 @@ export default function Notebook() {
                     }}><Icon name={c.type} size={12}/></div>
                     <span style={{ fontSize: 11, color: "var(--ink-500)", fontWeight: 500 }}>{c.author}</span>
                   </div>
-                  <Icon name="bookmark" size={13} style={{ color: "var(--ink-400)" }}/>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Icon name="bookmark" size={13} style={{ color: "var(--ink-400)" }}/>
+                    <button
+                      onClick={e => askDelete(e, c.id)}
+                      aria-label={t("nbp.delete")}
+                      title={t("nbp.delete")}
+                      style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 24, height: 24, padding: 0,
+                        border: "none", background: "transparent",
+                        borderRadius: 7, cursor: "pointer",
+                        color: "var(--ink-400)",
+                        transition: "all 200ms var(--ease)",
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = "oklch(0.95 0.05 25 / 0.6)";
+                        e.currentTarget.style.color = "oklch(0.42 0.13 25)";
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "var(--ink-400)";
+                      }}
+                    >
+                      <Icon name="trash" size={13}/>
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="display" style={{
@@ -277,7 +319,7 @@ export default function Notebook() {
             {filtered.map((c, i) => {
               const rowStyle: CSSProperties = {
                 display: "grid",
-                gridTemplateColumns: "36px 1fr 200px 140px 100px",
+                gridTemplateColumns: "36px 1fr 200px 140px 100px 32px",
                 alignItems: "center", gap: 16,
                 padding: "14px 18px",
                 borderBottom: i < filtered.length - 1 ? "0.5px solid rgba(23,42,82,0.06)" : "none",
@@ -316,6 +358,30 @@ export default function Notebook() {
                   <div style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)", textAlign: "right" }}>
                     {formatDate(c.addedAt, lang)}
                   </div>
+
+                  <button
+                    onClick={e => askDelete(e, c.id)}
+                    aria-label={t("nbp.delete")}
+                    title={t("nbp.delete")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 28, height: 28, padding: 0,
+                      border: "none", background: "transparent",
+                      borderRadius: 8, cursor: "pointer",
+                      color: "var(--ink-400)",
+                      transition: "all 200ms var(--ease)",
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "oklch(0.95 0.05 25 / 0.6)";
+                      e.currentTarget.style.color = "oklch(0.42 0.13 25)";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--ink-400)";
+                    }}
+                  >
+                    <Icon name="trash" size={13}/>
+                  </button>
                 </div>
               );
             })}
@@ -424,6 +490,24 @@ export default function Notebook() {
           </div>
         )}
       </main>
+
+      <ConfirmDialog
+        open={!!pendingDeleteId}
+        title={pendingSource ? `${t("nbp.delete.title")}` : t("nbp.delete.title")}
+        body={
+          <>
+            <div style={{ marginBottom: 8, color: "var(--ink-700)", fontWeight: 500 }}>
+              &ldquo;{pendingSource?.title ?? ""}&rdquo;
+            </div>
+            {t("nbp.delete.body")}
+          </>
+        }
+        destructive
+        confirmLabel={t("nbp.delete")}
+        cancelLabel={t("nbp.delete.cancel")}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }

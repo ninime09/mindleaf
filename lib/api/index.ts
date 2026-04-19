@@ -15,6 +15,7 @@ export {
   getHighlights,
   getNote,
   saveNote,
+  deleteSource,
   getReviewQueue,
   persistSummarizeResponse,
   mockSummarize,

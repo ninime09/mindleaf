@@ -5,7 +5,7 @@ export type IconName =
   | "check" | "blog" | "podcast" | "video" | "book" | "tag" | "folder" | "highlight"
   | "bolt" | "archive" | "settings" | "clock" | "heart" | "bookmark" | "link" | "x"
   | "chevron" | "chevronDown" | "mic" | "waveform" | "grid" | "list" | "filter" | "more"
-  | "brain" | "share" | "play" | "quote";
+  | "brain" | "share" | "play" | "quote" | "trash";
 
 type IconProps = {
   name: IconName;
@@ -53,6 +53,7 @@ export function Icon({ name, size = 18, stroke = 1.6, className = "", style }: I
     share: <><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M16 6l-4-4-4 4M12 2v14"/></>,
     play: <><path d="M6 4l14 8-14 8z"/></>,
     quote: <><path d="M7 7h4v4H7zM7 11c0 3 1 5 4 6M13 7h4v4h-4zM13 11c0 3 1 5 4 6"/></>,
+    trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M10 11v7M14 11v7"/></>,
   };
   return (
     <svg

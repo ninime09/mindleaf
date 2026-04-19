@@ -231,6 +231,13 @@ export const DICT = {
   "nbp.view.grid":     { en: "Grid",               zh: "网格" },
   "nbp.view.list":     { en: "List",               zh: "列表" },
   "nbp.view.rev":      { en: "Review",             zh: "复习" },
+  "nbp.delete":        { en: "Delete",             zh: "删除" },
+  "nbp.delete.title":  { en: "Delete this card?",  zh: "确定删除这则吗？" },
+  "nbp.delete.body":   {
+    en: "This permanently removes the summary, takeaways, highlights, and your personal notes for this source.",
+    zh: "这会永久删除这份内容的摘要、要点、高亮和你的笔记，无法恢复。",
+  },
+  "nbp.delete.cancel": { en: "Cancel",             zh: "取消" },
 
   /* ===== Detail page ===== */
   "det.onThisPage":    { en: "On this page",      zh: "本页导航" },

@@ -230,6 +230,31 @@ export async function getNote(sourceId: string): Promise<Note | null> {
   return map[sourceId] ?? null;
 }
 
+/* Permanently removes a source and everything keyed to it. Returns true
+   if a source was found and removed, false otherwise. */
+export async function deleteSource(id: string): Promise<boolean> {
+  ensureSeeded();
+  await sleep(60);
+  const sources = read<Source[]>("sources", SEED_SOURCES);
+  const next = sources.filter(s => s.id !== id);
+  if (next.length === sources.length) return false;
+  write("sources", next);
+
+  const sumMap = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
+  if (sumMap[id]) { delete sumMap[id]; write("summaries", sumMap); }
+
+  const tkMap = read<Record<string, Takeaway[]>>("takeaways", SEED_TAKEAWAYS);
+  if (tkMap[id]) { delete tkMap[id]; write("takeaways", tkMap); }
+
+  const hlMap = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  if (hlMap[id]) { delete hlMap[id]; write("highlights", hlMap); }
+
+  const noteMap = read<Record<string, Note>>("notes", SEED_NOTES);
+  if (noteMap[id]) { delete noteMap[id]; write("notes", noteMap); }
+
+  return true;
+}
+
 export async function saveNote(sourceId: string, body: string): Promise<Note> {
   ensureSeeded();
   await sleep(80);
