@@ -6,10 +6,12 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon } from "@/components/icons";
 import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
 import {
-  getHighlights, getNote, getSource, getSummary, getTakeaways,
-  listSources, saveNote, setNoteTags,
+  addHighlight, deleteHighlight, getHighlights, getNote, getSource,
+  getSummary, getTakeaways, listSources, saveNote, setNoteTags,
+  updateHighlightAnnotation,
   type Highlight, type Note, type Source, type Summary, type Takeaway,
 } from "@/lib/api";
+import { Highlightable } from "@/components/highlightable";
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
 
@@ -518,6 +520,24 @@ function DynamicDetail({ id }: { id: string }) {
     return () => { cancelled = true; };
   }, [id]);
 
+  /* Highlight CRUD — wired through to the right-sidebar list. Optimistic
+     local state; mock API persists to localStorage. */
+  const addHl = async (blockId: string, text: string) => {
+    const h = await addHighlight({ sourceId: id, blockId, text });
+    setHighlights(prev => [...prev, h]);
+  };
+  const updateHl = async (hlId: string, annotation: string) => {
+    const h = await updateHighlightAnnotation(id, hlId, annotation);
+    if (h) setHighlights(prev => prev.map(x => x.id === hlId ? h : x));
+  };
+  const removeHl = async (hlId: string) => {
+    const ok = await deleteHighlight(id, hlId);
+    if (ok) setHighlights(prev => prev.filter(x => x.id !== hlId));
+  };
+
+  /* Helper: highlights filtered to a single block. */
+  const blockHls = (blockId: string) => highlights.filter(h => h.blockId === blockId);
+
   /* Tag editing — fire-and-forget persistence; UI updates optimistically. */
   const addNoteTag = async (tag: string) => {
     const clean = tag.trim();
@@ -761,7 +781,16 @@ function DynamicDetail({ id }: { id: string }) {
               </h2>
               <div style={{ fontSize: 17, lineHeight: 1.7, color: "var(--ink-700)", fontFamily: "var(--font-display)", letterSpacing: "-0.005em" }}>
                 {summary.paragraphs.map((p, i) => (
-                  <p key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{p}</p>
+                  <Highlightable
+                    key={i}
+                    blockId={`summary-p-${i}`}
+                    text={p}
+                    highlights={blockHls(`summary-p-${i}`)}
+                    onAdd={(t) => addHl(`summary-p-${i}`, t)}
+                    onUpdate={updateHl}
+                    onDelete={removeHl}
+                    style={i === 0 ? { marginTop: 0 } : undefined}
+                  />
                 ))}
               </div>
             </section>
@@ -781,9 +810,18 @@ function DynamicDetail({ id }: { id: string }) {
                       fontSize: 30, color: "var(--accent-deep)",
                       letterSpacing: "-0.02em", flexShrink: 0, width: 44,
                     }}>{String(i + 1).padStart(2, "0")}</div>
-                    <div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 16, fontWeight: 550, marginBottom: 6, letterSpacing: "-0.01em" }}>{tk.title}</div>
-                      <div style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ink-500)" }}>{tk.detail}</div>
+                      <Highlightable
+                        as="div"
+                        blockId={`takeaway-${tk.id}-detail`}
+                        text={tk.detail}
+                        highlights={blockHls(`takeaway-${tk.id}-detail`)}
+                        onAdd={(t) => addHl(`takeaway-${tk.id}-detail`, t)}
+                        onUpdate={updateHl}
+                        onDelete={removeHl}
+                        style={{ fontSize: 14, lineHeight: 1.6, color: "var(--ink-500)" }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -828,7 +866,16 @@ function DynamicDetail({ id }: { id: string }) {
               </h2>
               <div style={{ fontSize: 16, lineHeight: 1.75, color: "var(--ink-700)" }}>
                 {summary.beginnerExplanation.map((p, i) => (
-                  <p key={i} style={i === 0 ? { marginTop: 0 } : undefined}>{p}</p>
+                  <Highlightable
+                    key={i}
+                    blockId={`explain-p-${i}`}
+                    text={p}
+                    highlights={blockHls(`explain-p-${i}`)}
+                    onAdd={(t) => addHl(`explain-p-${i}`, t)}
+                    onUpdate={updateHl}
+                    onDelete={removeHl}
+                    style={i === 0 ? { marginTop: 0 } : undefined}
+                  />
                 ))}
               </div>
             </section>

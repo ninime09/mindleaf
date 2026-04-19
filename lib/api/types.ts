@@ -38,8 +38,11 @@ export type Highlight = {
   id: string;
   sourceId: string;
   text: string;
-  timestamp?: string; /* HH:MM or HH:MM:SS */
   hue: number;
+  timestamp?: string;   /* HH:MM or HH:MM:SS — used for video/podcast source highlights */
+  annotation?: string;  /* the user's note attached to this highlight */
+  blockId?: string;     /* which block in the article this highlight belongs to (e.g. "summary-0") */
+  createdAt?: string;   /* ISO timestamp when the user created it */
 };
 
 export type Note = {

@@ -223,6 +223,58 @@ export async function getHighlights(sourceId: string): Promise<Highlight[]> {
   return map[sourceId] ?? [];
 }
 
+export async function addHighlight(input: {
+  sourceId: string; blockId: string; text: string; hue?: number; annotation?: string;
+}): Promise<Highlight> {
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  const list = map[input.sourceId] ?? [];
+  const hl: Highlight = {
+    id: `hl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    sourceId: input.sourceId,
+    text: input.text.trim(),
+    hue: input.hue ?? 65,
+    blockId: input.blockId,
+    annotation: input.annotation,
+    createdAt: new Date().toISOString(),
+  };
+  map[input.sourceId] = [...list, hl];
+  write("highlights", map);
+  return hl;
+}
+
+export async function updateHighlightAnnotation(
+  sourceId: string, highlightId: string, annotation: string
+): Promise<Highlight | null> {
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  const list = map[sourceId] ?? [];
+  let updated: Highlight | null = null;
+  const next = list.map(h => {
+    if (h.id !== highlightId) return h;
+    updated = { ...h, annotation };
+    return updated;
+  });
+  if (!updated) return null;
+  map[sourceId] = next;
+  write("highlights", map);
+  return updated;
+}
+
+export async function deleteHighlight(sourceId: string, highlightId: string): Promise<boolean> {
+  ensureSeeded();
+  await sleep(30);
+  const map = read<Record<string, Highlight[]>>("highlights", SEED_HIGHLIGHTS);
+  const list = map[sourceId] ?? [];
+  const next = list.filter(h => h.id !== highlightId);
+  if (next.length === list.length) return false;
+  map[sourceId] = next;
+  write("highlights", map);
+  return true;
+}
+
 export async function getNote(sourceId: string): Promise<Note | null> {
   ensureSeeded();
   await sleep(20);
