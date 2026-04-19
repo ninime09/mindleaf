@@ -19,32 +19,32 @@ export const runtime = "nodejs";
    order on the Detail page, which reads a bit better for Claude.
    ============================================================ */
 /* Note: structured outputs validate strings/array bounds CLIENT-SIDE
-   in the SDK — Claude doesn't see them. We keep mins loose to avoid
-   spurious validation throws when Claude trims aggressively, and rely
-   on the field descriptions (which Claude DOES see) to communicate
-   target counts and lengths. */
+   in the SDK — Claude doesn't see them. We keep schema constraints
+   permissive (just non-empty) so a slightly verbose or terse response
+   doesn't 500, and rely on the field descriptions (which Claude DOES
+   see) to communicate target counts and lengths. */
 const SummaryOutput = z.object({
   title: z.string().min(1).describe(
     "1–10 words. Prefer the source's own title; otherwise write a clean, calm rephrasing."
   ),
-  tags: z.array(z.string().min(2)).min(1).max(5).describe(
-    "1–5 lowercase topic tags useful for grouping in a notebook (e.g. 'attention', 'craft', 'focus'). Not a restatement of the title."
+  tags: z.array(z.string().min(1)).min(1).describe(
+    "1–5 lowercase topic tags useful for grouping in a notebook (e.g. 'attention', 'craft', 'focus'). Not a restatement of the title. Keep it to 5 max."
   ),
-  thesis: z.string().min(10).describe(
+  thesis: z.string().min(1).describe(
     "Target 10–22 words. One sentence. The single most important claim, stated plainly. No 'the author argues that…' preamble."
   ),
-  paragraphs: z.array(z.string()).min(1).max(4).describe(
-    "Aim for 2 or 3 paragraphs. Each paragraph 2–4 sentences. Cover the substance of what the source says — concrete, editorial, calm. Return at least 2 unless the source is genuinely too thin to support that."
+  paragraphs: z.array(z.string().min(1)).min(1).describe(
+    "Aim for 2 or 3 paragraphs (do not exceed 4). Each paragraph 2–4 sentences. Cover the substance of what the source says — concrete, editorial, calm. Return at least 2 unless the source is genuinely too thin."
   ),
   takeaways: z.array(z.object({
-    title: z.string().min(3).describe("≤ 80 chars. One punchy line the reader could carry with them."),
-    detail: z.string().min(10).describe("One sentence, 18–35 words. Why it matters or how it's grounded in the source. Avoid one-word answers — give enough context to land."),
-  })).min(2).max(5).describe("Aim for 3 or 4 takeaways. Return at least 3 if the source has multiple distinct ideas worth carrying."),
-  memorableQuote: z.string().min(10).describe(
+    title: z.string().min(1).describe("≤ 80 chars. One punchy line the reader could carry with them. Never a single word — always a full thought."),
+    detail: z.string().min(1).describe("One sentence, 18–35 words. Why it matters or how it's grounded in the source. Give enough context to land — never just a fragment."),
+  })).min(1).describe("Aim for 3 or 4 takeaways (do not exceed 5). Return at least 3 if the source has multiple distinct ideas worth carrying."),
+  memorableQuote: z.string().min(1).describe(
     "One sentence, target 10–25 words. The single line worth remembering when everything else fades. If the source had a quotable line that captures it, use that; otherwise paraphrase the thesis in a more memorable way. No quote marks."
   ),
-  beginnerExplanation: z.array(z.string()).min(1).max(4).describe(
-    "Aim for 2 or 3 short paragraphs, 2–3 sentences each, explaining the idea to someone new using a simple metaphor or everyday scenario. Different angle than the summary — use analogy, not the piece's own structure. Return at least 2 unless the idea is so simple it can be explained in one paragraph."
+  beginnerExplanation: z.array(z.string().min(1)).min(1).describe(
+    "Aim for 2 or 3 short paragraphs, 2–3 sentences each (do not exceed 4 paragraphs total), explaining the idea to someone new using a simple metaphor or everyday scenario. Different angle than the summary — use analogy, not the piece's own structure."
   ),
 });
 
@@ -66,6 +66,7 @@ const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, po
 # Discipline
 - **Cut filler, cover the substance.** Trim sentences that don't earn their place, but don't underfeed the reader. If the source has three distinct ideas worth carrying, give three takeaways — not one.
 - Do not repeat yourself across sections. The thesis, takeaway titles, memorable quote, and beginner explanation must each say something the others don't.
+- **Every takeaway must be a complete thought.** No fragments, no dangling phrases, no titles that end with 的/了 mid-clause or a hanging preposition. If you can't fit the idea into one full sentence, drop the takeaway entirely.
 - Treat the field descriptions as the contract: hit the target counts and lengths unless the source genuinely doesn't support it. A two-sentence essay can become a one-paragraph summary; a meaty article should not.
 - Never invent facts. If something is implied but not stated, say so plainly.
 - Do not start the thesis with "The article", "The author", "This piece", "This essay" or similar throat-clearing. Start with the idea itself.
@@ -234,7 +235,7 @@ export async function POST(req: Request) {
        no-op. Don't add a top-level cache_control — that would cache
        the per-URL user message no other request can reuse. */
     const response = await client.messages.parse({
-      model: "claude-haiku-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 4000,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userPrompt }],
