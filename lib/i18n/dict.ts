@@ -420,7 +420,7 @@ export const DICT = {
   "price.seedling.name": { en: "Seedling",               zh: "初芽" },
   "price.seedling.tag":  { en: "Enough to try it out and save what's worth keeping.", zh: "够你试试，把有价值的内容记下来。" },
   "price.seedling.cta":  { en: "Start free",             zh: "免费开始" },
-  "price.seedling.f1":   { en: "10 credits per month",   zh: "每月 10 积分" },
+  "price.seedling.f1":   { en: "5 credits per month",    zh: "每月 5 积分" },
   "price.seedling.f2":   { en: "Blog, podcast & video import", zh: "支持博客、播客、视频导入" },
   "price.seedling.f3":   { en: "Saved to your personal notebook", zh: "保存到个人笔记本" },
   "price.seedling.f4":   { en: "Basic highlights & search", zh: "基础高亮与搜索" },
@@ -452,7 +452,7 @@ export const DICT = {
   "price.compare.title":   { en: "Pick what fits the season you're in.", zh: "挑一个贴合你当下的。" },
 
   "price.cmp.1":       { en: "Monthly credits",          zh: "每月积分" },
-  "price.cmp.1.free":  { en: "10",                       zh: "10" },
+  "price.cmp.1.free":  { en: "5",                        zh: "5" },
   "price.cmp.1.reader":{ en: "80",                       zh: "80" },
   "price.cmp.1.studio":{ en: "250",                      zh: "250" },
   "price.cmp.2":       { en: "Spaced review",            zh: "间隔复习" },
