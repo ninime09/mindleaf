@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n/context";
 import { Icon } from "@/components/icons";
 import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
 import {
   addHighlight, deleteHighlight, getHighlights, getNote, getSource,
-  getSummary, getTakeaways, listSources, saveNote, setNoteTags,
+  getSummary, getTakeaways, listSources, setNoteTags,
   updateHighlightAnnotation,
   type Highlight, type Note, type Source, type Summary, type Takeaway,
 } from "@/lib/api";
 import { Highlightable } from "@/components/highlightable";
+import { NoteTagEditor } from "@/components/note-tag-editor";
+import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
 
@@ -22,38 +24,6 @@ export default function Detail() {
   const id = params?.id ?? CANONICAL_ID;
   if (id === CANONICAL_ID) return <CanonicalDetail id={id}/>;
   return <DynamicDetail id={id}/>;
-}
-
-/* ============================================================
-   Shared hook — notes loaded from API, debounced save on edit.
-   Falls back to the i18n default copy if no note exists yet.
-   ============================================================ */
-function useNotes(id: string, fallback: string) {
-  const [notes, setNotes] = useState(fallback);
-  const [loaded, setLoaded] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getNote(id).then(n => {
-      if (cancelled) return;
-      if (n) setNotes(n.body);
-      setLoaded(true);
-    });
-    return () => { cancelled = true; };
-  }, [id]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      saveNote(id, notes).then(n => setSavedAt(new Date(n.updatedAt)));
-    }, 500);
-    return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [notes, loaded, id]);
-
-  return { notes, setNotes, savedAt };
 }
 
 function CanonicalDetail({ id }: { id: string }) {
@@ -908,13 +878,15 @@ function DynamicDetail({ id }: { id: string }) {
                 letterSpacing: "-0.005em",
               }}
             />
-            <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 11.5, color: "var(--ink-500)", marginRight: 4 }}>{t("det.notes.addTag")}</span>
-              {noteTags.map(tg => (
-                <NoteTagPill key={tg} label={tg} onRemove={() => removeNoteTag(tg)}/>
-              ))}
-              <AddTagButton onAdd={addNoteTag} placeholder={t("det.tag.placeholder")} addLabel={t("det.tag.add")}/>
-            </div>
+            <NoteTagEditor
+              tags={noteTags}
+              onAdd={addNoteTag}
+              onRemove={removeNoteTag}
+              addLabel={t("det.tag.add")}
+              placeholder={t("det.tag.placeholder")}
+              promptLabel={t("det.notes.addTag")}
+              style={{ marginTop: 12 }}
+            />
           </section>
 
           {/* PREV / NEXT */}
@@ -1062,108 +1034,6 @@ function DynamicDetail({ id }: { id: string }) {
   );
 }
 
-/* ============================================================
-   Note tag chips + add-tag input
-   ============================================================ */
-function NoteTagPill({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "3px 4px 3px 10px",
-      fontSize: 11.5, fontWeight: 500,
-      background: "oklch(0.92 0.05 235 / 0.6)",
-      color: "oklch(0.36 0.10 245)",
-      border: "0.5px solid rgba(23,42,82,0.06)",
-      borderRadius: 999,
-      letterSpacing: "-0.005em",
-    }}>
-      {label}
-      <button
-        onClick={onRemove}
-        aria-label={`Remove ${label}`}
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 16, height: 16, borderRadius: 999,
-          border: "none", background: "transparent",
-          color: "currentColor", opacity: 0.6, cursor: "pointer",
-          transition: "opacity 160ms var(--ease)",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
-        onMouseLeave={e => { e.currentTarget.style.opacity = "0.6"; }}
-      >
-        <Icon name="x" size={9}/>
-      </button>
-    </span>
-  );
-}
-
-function AddTagButton({ onAdd, placeholder, addLabel }: {
-  onAdd: (tag: string) => void; placeholder: string; addLabel: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editing) ref.current?.focus();
-  }, [editing]);
-
-  if (!editing) {
-    return (
-      <button
-        onClick={() => setEditing(true)}
-        style={{
-          padding: "3px 10px",
-          fontSize: 11.5, fontWeight: 500,
-          color: "var(--ink-500)",
-          background: "rgba(23,42,82,0.04)",
-          border: "0.5px dashed rgba(23,42,82,0.2)",
-          borderRadius: 999, cursor: "pointer",
-          letterSpacing: "-0.005em",
-          fontFamily: "var(--font-ui)",
-        }}
-      >
-        {addLabel}
-      </button>
-    );
-  }
-  return (
-    <input
-      ref={ref}
-      value={value}
-      onChange={e => setValue(e.target.value)}
-      onKeyDown={e => {
-        if (e.key === "Enter") {
-          if (value.trim()) onAdd(value);
-          setValue("");
-          setEditing(false);
-        } else if (e.key === "Escape") {
-          setValue("");
-          setEditing(false);
-        }
-      }}
-      onBlur={() => {
-        if (value.trim()) onAdd(value);
-        setValue("");
-        setEditing(false);
-      }}
-      placeholder={placeholder}
-      style={{
-        padding: "3px 10px",
-        fontSize: 11.5, fontWeight: 500,
-        color: "var(--ink-900)",
-        background: "rgba(255,255,255,0.7)",
-        border: "0.5px solid oklch(0.65 0.10 245 / 0.5)",
-        outline: "none",
-        borderRadius: 999,
-        width: 110,
-        fontFamily: "var(--font-ui)",
-        letterSpacing: "-0.005em",
-      }}
-    />
-  );
-}
-
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
@@ -1213,20 +1083,3 @@ function estimateReadMinutes(summary: Summary | null, takeaways: Takeaway[]): nu
   return Math.max(1, Math.round(words / 220));
 }
 
-/* ============================================================
-   savedLabel — formats the autosave timestamp for the UI.
-   ============================================================ */
-function savedLabel(savedAt: Date | null, lang: "en" | "zh", fallback: string): string {
-  if (!savedAt) return fallback;
-  const elapsed = Date.now() - savedAt.getTime();
-  if (lang === "zh") {
-    if (elapsed < 5_000)   return "已保存 · 刚刚";
-    if (elapsed < 60_000)  return `已保存 · ${Math.floor(elapsed / 1000)} 秒前`;
-    if (elapsed < 3600_000) return `已保存 · ${Math.floor(elapsed / 60_000)} 分钟前`;
-    return `已保存 · ${savedAt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
-  }
-  if (elapsed < 5_000)   return "Saved · just now";
-  if (elapsed < 60_000)  return `Saved · ${Math.floor(elapsed / 1000)}s ago`;
-  if (elapsed < 3600_000) return `Saved · ${Math.floor(elapsed / 60_000)}m ago`;
-  return `Saved · ${savedAt.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`;
-}
