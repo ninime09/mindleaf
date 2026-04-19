@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Orb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight } from "@/components/interactions";
+import { AuthMenu } from "@/components/auth-menu";
 import { useToast } from "@/components/toast";
 
 const MINDLEAF_HANDLE_URL = "https://github.com/ninime09/mindleaf";
@@ -50,7 +51,6 @@ export default function Pricing() {
     push(t("toast.betaFree"), { icon: "sparkle" });
     setTimeout(() => router.push("/workspace"), 650);
   };
-  const onSignin = () => push(t("toast.signinSoon"), { kind: "info", icon: "bolt" });
   const onComingPage = () => push(t("toast.pageSoon"), { kind: "info" });
 
   const handleNav = (key: string) => (e: React.MouseEvent) => {
@@ -150,7 +150,7 @@ export default function Pricing() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
             <LangSwitch compact/>
-            <button onClick={onSignin} className="btn btn-ghost pressable" style={{ padding: "8px 14px", fontSize: 13 }}>{t("nav.signin")}</button>
+            <AuthMenu/>
             <Magnetic strength={0.3}>
               <button className="btn btn-primary pressable" onClick={onEnter} style={{ padding: "8px 16px", fontSize: 13 }}>
                 {t("nav.start")} <Icon name="arrow" size={14}/>
