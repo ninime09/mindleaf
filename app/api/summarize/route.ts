@@ -234,9 +234,14 @@ export async function POST(req: Request) {
        reads it back at ~0.1× input cost. Until then it's a silent
        no-op. Don't add a top-level cache_control — that would cache
        the per-URL user message no other request can reuse. */
+    /* max_tokens — Anthropic-recommended non-streaming default is ~16K
+       (keeps responses under SDK HTTP timeouts). Earlier value of 4000
+       was tripping mid-output truncation on long Chinese articles where
+       Sonnet's takeaway + explanation fields ran past the budget,
+       leaving the thesis field cut mid-sentence in the final JSON. */
     const response = await client.messages.parse({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 16000,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userPrompt }],
       output_config: { format: zodOutputFormat(SummaryOutput) },
@@ -247,10 +252,19 @@ export async function POST(req: Request) {
     }
     output = response.parsed_output;
 
+    /* If Claude still hits the cap, the JSON parse may succeed but a
+       string field can be truncated mid-sentence. Surface that loudly
+       so we can bump the budget rather than silently shipping a broken
+       summary. */
+    if (response.stop_reason === "max_tokens") {
+      console.warn("[summarize] hit max_tokens cap — output may be truncated. Consider raising max_tokens further.");
+    }
+
     if (process.env.NODE_ENV !== "production") {
       const u = response.usage;
       console.log(
-        `[summarize] lang=${targetLang} cache_read=${u.cache_read_input_tokens ?? 0} ` +
+        `[summarize] lang=${targetLang} stop=${response.stop_reason} ` +
+        `cache_read=${u.cache_read_input_tokens ?? 0} ` +
         `cache_create=${u.cache_creation_input_tokens ?? 0} ` +
         `input=${u.input_tokens} output=${u.output_tokens}`
       );
