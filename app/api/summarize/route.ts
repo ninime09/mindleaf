@@ -18,33 +18,36 @@ export const runtime = "nodejs";
    upper bounds. Order of fields here mirrors the UI's section
    order on the Detail page, which reads a bit better for Claude.
    ============================================================ */
-/* Note: structured outputs validate strings/array bounds CLIENT-SIDE
-   in the SDK — Claude doesn't see them. We keep schema constraints
-   permissive (just non-empty) so a slightly verbose or terse response
-   doesn't 500, and rely on the field descriptions (which Claude DOES
-   see) to communicate target counts and lengths. */
+/* Note: structured outputs validate bounds CLIENT-SIDE in the SDK —
+   Claude doesn't see them. Schema constraints stay permissive (just
+   non-empty); the descriptions communicate intent without prescribing
+   counts, so a long meaty source can produce a thick summary and a
+   short thin one a shorter one. The *structure* is fixed; the *depth*
+   follows the source. */
 const SummaryOutput = z.object({
   title: z.string().min(1).describe(
-    "1–10 words. Prefer the source's own title; otherwise write a clean, calm rephrasing."
+    "A short, clean title. Prefer the source's own title if it has one; otherwise rephrase in the same calm voice."
   ),
   tags: z.array(z.string().min(1)).min(1).describe(
-    "1–5 lowercase topic tags useful for grouping in a notebook (e.g. 'attention', 'craft', 'focus'). Not a restatement of the title. Keep it to 5 max."
+    "A handful of lowercase topic tags for grouping in a notebook (e.g. 'attention', 'craft', 'focus'). Not a restatement of the title. Keep it to 5 or fewer."
   ),
   thesis: z.string().min(1).describe(
-    "Target 10–22 words. One sentence. The single most important claim, stated plainly. No 'the author argues that…' preamble."
+    "One sentence. The single most important claim, stated plainly. No 'the author argues that…' preamble. Start with the idea."
   ),
   paragraphs: z.array(z.string().min(1)).min(1).describe(
-    "Aim for 2 or 3 paragraphs (do not exceed 4). Each paragraph 2–4 sentences. Cover the substance of what the source says — concrete, editorial, calm. Return at least 2 unless the source is genuinely too thin."
+    "Use as many paragraphs as the source genuinely needs — don't pad a thin source, don't flatten a rich one. Cover the substance concretely and in the Mindleaf voice."
   ),
   takeaways: z.array(z.object({
-    title: z.string().min(1).describe("≤ 80 chars. One punchy line the reader could carry with them. Never a single word — always a full thought."),
-    detail: z.string().min(1).describe("One sentence, 18–35 words. Why it matters or how it's grounded in the source. Give enough context to land — never just a fragment."),
-  })).min(1).describe("Aim for 3 or 4 takeaways (do not exceed 5). Return at least 3 if the source has multiple distinct ideas worth carrying."),
+    title: z.string().min(1).describe("A punchy line the reader could carry with them. A full thought, not a topic label."),
+    detail: z.string().min(1).describe("One or two sentences explaining why the takeaway matters or how it's grounded in the source. Enough context to land."),
+  })).min(1).describe(
+    "Capture every distinct idea worth carrying from this source. Don't artificially trim to hit a number, don't pad to look thorough. A meaty essay may have six takeaways; a narrow piece may have two."
+  ),
   memorableQuote: z.string().min(1).describe(
-    "One sentence, target 10–25 words. The single line worth remembering when everything else fades. If the source had a quotable line that captures it, use that; otherwise paraphrase the thesis in a more memorable way. No quote marks."
+    "One sentence — the single line worth remembering when everything else fades. Lift it from the source if there's a quotable line that captures the piece; otherwise paraphrase the thesis in a more memorable way. No quote marks."
   ),
   beginnerExplanation: z.array(z.string().min(1)).min(1).describe(
-    "Aim for 2 or 3 short paragraphs, 2–3 sentences each (do not exceed 4 paragraphs total), explaining the idea to someone new using a simple metaphor or everyday scenario. Different angle than the summary — use analogy, not the piece's own structure."
+    "As many short paragraphs as the metaphor needs, explaining the idea to someone new using a simple metaphor or everyday scenario. A different angle than the summary — use analogy, not the piece's own structure."
   ),
 });
 
@@ -64,10 +67,10 @@ const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, po
 - Quotes are rare and earned. Lift them only when the original phrasing is irreplaceable — otherwise paraphrase.
 
 # Discipline
-- **Cut filler, cover the substance.** Trim sentences that don't earn their place, but don't underfeed the reader. If the source has three distinct ideas worth carrying, give three takeaways — not one.
+- **Cut filler, cover the substance.** Trim sentences that don't earn their place, but don't underfeed the reader.
+- **Match the source's depth.** A rich, meaty essay earns a thick summary with many takeaways; a short thin one gets a shorter treatment. Never pad to look thorough; never trim to look concise. Let the source decide.
 - Do not repeat yourself across sections. The thesis, takeaway titles, memorable quote, and beginner explanation must each say something the others don't.
 - **Every takeaway must be a complete thought.** No fragments, no dangling phrases, no titles that end with 的/了 mid-clause or a hanging preposition. If you can't fit the idea into one full sentence, drop the takeaway entirely.
-- Treat the field descriptions as the contract: hit the target counts and lengths unless the source genuinely doesn't support it. A two-sentence essay can become a one-paragraph summary; a meaty article should not.
 - Never invent facts. If something is implied but not stated, say so plainly.
 - Do not start the thesis with "The article", "The author", "This piece", "This essay" or similar throat-clearing. Start with the idea itself.
 
@@ -101,7 +104,7 @@ The pattern: punchy titles state a position, name the constraint, or invert the 
 
 # Worked example — English
 
-The source below is a hypothetical 54-minute conference talk by Linzi Berry titled "Designing calm software" (Figma Config '25). Use this as a style anchor only — never copy its content for unrelated sources.
+The source below is a hypothetical 54-minute conference talk by Linzi Berry titled "Designing calm software" (Figma Config '25). Read it for **structure, voice, and the shape of each field** — the *frame* of a Mindleaf summary. Do **not** treat the specific number of paragraphs, takeaways, or explanation paragraphs as a template to copy for unrelated sources; let the real source's depth dictate those counts. And never lift the example's metaphors, tags, or quote into an unrelated summary.
 
 Source preview:
 "…software has gotten louder at the exact moment our attention has become most fragile. I want to argue today for what I call calm software — software that respects the state of mind you bring to it… the test for any notification is: would this still be valuable if you discovered it an hour later on your own?… motion in interfaces should be a language for cause and effect, not decoration… the average team chat app's unread badge is the iOS Focus mode's exact opposite — it manufactures urgency for engagement…"
@@ -130,11 +133,12 @@ Expected output (target language: English):
   ]
 }
 
-What makes the example work:
+What this example demonstrates (structure and voice — NOT a length template):
 - The thesis is one sentence carrying the whole argument; no "the speaker discusses…" preamble.
 - Each takeaway title is a stance, not a topic ("Notifications must earn their interruption" — not "About notifications").
 - The memorable quote is one line you could carry with you all week. It's not a restatement of the thesis.
 - The beginner explanation comes at the same idea from a different angle — a concrete two-roommates metaphor — instead of repeating the summary's structure.
+- The number of paragraphs and takeaways matches the density of this particular talk. A denser source would earn more; a thinner one, fewer.
 
 # Worked example — 中文 (same source, target language: 中文)
 
@@ -162,10 +166,11 @@ Expected output:
   ]
 }
 
-What makes the Chinese version work:
-- 中文翻译不是逐字逐句的英文，而是地道的、像编辑写的那种。"砍" "塞" "硬插嘴"都是中文自然的口语，不是英文直译。
-- 标签用自然中文短语（"注意力" "从容设计"），不音译英文。
-- 整段读起来像中文写作者写的，不是翻译稿。`;
+What this Chinese version demonstrates (voice — NOT a length template):
+- 中文不是逐字逐句的英文直译，而是地道的、像中文编辑会写的那种。"砍" "塞" "硬插嘴"都是自然口语。
+- 标签用自然中文短语（"注意力" "从容设计"），不音译英文术语。
+- 整段读起来像中文写作者的原创，不是翻译稿。
+- 同样，段落数、要点数跟着源文章的密度走，不要把这里的数量当成模板照搬。`;
 
 /* ============================================================
    POST /api/summarize
