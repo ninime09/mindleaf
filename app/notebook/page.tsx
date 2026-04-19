@@ -6,7 +6,10 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Progress, Segmented } from "@/components/primitives";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { deleteSource, listSources, type Source } from "@/lib/api";
+import {
+  deleteSource, getReviewItems, listSources, rateReview,
+  type Rating, type ReviewItem, type Source,
+} from "@/lib/api";
 
 type View = "grid" | "list" | "review";
 type CollectionId = "all" | "ml" | "design" | "phil" | "writing" | "learn";
@@ -30,6 +33,9 @@ export default function Notebook() {
 
   const [sources, setSources] = useState<Source[]>([]);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,7 +43,21 @@ export default function Notebook() {
       if (cancelled) return;
       setSources(s);
     });
+    getReviewItems().then(items => {
+      if (cancelled) return;
+      setReviewItems(items);
+    });
     return () => { cancelled = true; };
+  }, []);
+
+  /* Support /notebook?view=review deep-link (e.g. from Workspace nav). */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "review") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setView("review");
+    }
   }, []);
 
   const openSource = (id: string) => router.push(`/read/${id}`);
@@ -56,6 +76,33 @@ export default function Notebook() {
   };
 
   const pendingSource = sources.find(s => s.id === pendingDeleteId);
+
+  /* Reviews: derive due list from loaded items. An item is due if it
+     has never been reviewed OR its dueAt is in the past. The current
+     wall-clock read is deliberate — we want to re-evaluate each render
+     so cards tick in as they come due during a long session. */
+  // eslint-disable-next-line react-hooks/purity
+  const nowMs = Date.now();
+  const dueItems = reviewItems.filter(it => !it.state || new Date(it.state.dueAt).getTime() <= nowMs);
+  const currentReview = dueItems[reviewIdx] ?? null;
+
+  const startReviewSession = () => {
+    setView("review");
+    setReviewIdx(0);
+    setRevealed(false);
+  };
+
+  const rateCurrent = async (rating: Rating) => {
+    if (!currentReview) return;
+    const state = await rateReview(currentReview.source.id, rating);
+    /* Update the item's state in place so subsequent renders see it,
+       even though we don't re-filter the session list mid-stream. */
+    setReviewItems(prev =>
+      prev.map(it => it.source.id === state.sourceId ? { ...it, state } : it)
+    );
+    setReviewIdx(i => i + 1);
+    setRevealed(false);
+  };
 
   const collections: { id: CollectionId; label: string; count: number }[] = useMemo(() => [
     { id: "all",     label: t("nbp.col.all"),     count: sources.length },
@@ -168,10 +215,23 @@ export default function Notebook() {
             <span style={{ fontSize: 12, fontWeight: 550 }}>{t("nbp.rev.today")}</span>
           </div>
           <div className="display" style={{ fontSize: 32, margin: "0 0 2px", letterSpacing: "-0.02em" }}>
-            3 <span style={{ fontSize: 13, color: "var(--ink-500)", fontFamily: "var(--font-ui)" }}>/ 9 {t("nbp.rev.due")}</span>
+            {dueItems.length}
+            <span style={{ fontSize: 13, color: "var(--ink-500)", fontFamily: "var(--font-ui)" }}>
+              {" "}/ {reviewItems.length} {t("nbp.rev.due")}
+            </span>
           </div>
-          <Progress value={3/9}/>
-          <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", fontSize: 12, padding: "7px 12px", marginTop: 12 }}>
+          <Progress value={reviewItems.length ? dueItems.length / reviewItems.length : 0}/>
+          <button
+            className="btn btn-ghost"
+            onClick={startReviewSession}
+            disabled={dueItems.length === 0}
+            style={{
+              width: "100%", justifyContent: "center", fontSize: 12,
+              padding: "7px 12px", marginTop: 12,
+              opacity: dueItems.length === 0 ? 0.5 : 1,
+              cursor: dueItems.length === 0 ? "not-allowed" : "pointer",
+            }}
+          >
             {t("nbp.rev.start")}
           </button>
         </div>
@@ -395,105 +455,18 @@ export default function Notebook() {
         )}
 
         {view === "review" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div className="glass" style={{ padding: 32, borderRadius: 22, display: "flex", flexDirection: "column", gap: 20, minHeight: 420 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span className="eyebrow">Review · card 1 of 3</span>
-                <Progress value={1/3}/>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--ink-500)", marginBottom: 6 }}>
-                  <Icon name="video" size={12} style={{ verticalAlign: -2, marginRight: 5 }}/>
-                  3Blue1Brown · reviewed 4 days ago
-                </div>
-                <h3 className="display" style={{ fontSize: 32, margin: 0, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                  What is a transformer, really?
-                </h3>
-              </div>
-
-              <div style={{
-                padding: 20, borderRadius: 16,
-                background: "linear-gradient(180deg, oklch(0.95 0.03 235 / 0.7), oklch(0.97 0.02 235 / 0.3))",
-                border: "0.5px solid rgba(23,42,82,0.06)",
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <blockquote className="display" style={{
-                  margin: 0, fontSize: 22, lineHeight: 1.3, textAlign: "center",
-                  color: "var(--ink-900)", fontStyle: "italic", letterSpacing: "-0.015em",
-                }}>
-                  &ldquo;Attention lets a model weigh every part of the input against every other — all at once.&rdquo;
-                </blockquote>
-              </div>
-
-              <div style={{ display: "flex", gap: 8 }}>
-                {[
-                  { label: "Still hazy" },
-                  { label: "Getting it" },
-                  { label: "Solid"      },
-                  { label: "Teach it"   },
-                ].map(b => (
-                  <button key={b.label} style={{
-                    flex: 1, padding: "10px 8px",
-                    border: "0.5px solid rgba(23,42,82,0.08)",
-                    background: "rgba(255,255,255,0.6)",
-                    borderRadius: 10, fontSize: 12, fontWeight: 500,
-                    cursor: "pointer", fontFamily: "var(--font-ui)",
-                    color: "var(--ink-700)",
-                    transition: "all 220ms var(--ease)",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "white"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.6)"; e.currentTarget.style.transform = "translateY(0)"; }}>
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div className="glass" style={{ padding: 22, borderRadius: 18 }}>
-                <div className="eyebrow" style={{ marginBottom: 10 }}>Up next in review</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {filtered.slice(1, 4).map(c => (
-                    <div key={c.id} style={{
-                      display: "flex", alignItems: "center", gap: 10,
-                      padding: "8px 10px", borderRadius: 10,
-                      background: "rgba(255,255,255,0.4)",
-                    }}>
-                      <div style={{
-                        width: 24, height: 24, borderRadius: 6,
-                        background: `oklch(0.95 0.03 ${c.hue})`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        color: `oklch(0.40 0.09 ${c.hue})`,
-                      }}><Icon name={c.type} size={11}/></div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 550 }} className="truncate">{c.title}</div>
-                        <div style={{ fontSize: 10.5, color: "var(--ink-400)" }}>{c.author}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="glass" style={{ padding: 22, borderRadius: 18 }}>
-                <div className="eyebrow" style={{ marginBottom: 14 }}>Retention curve</div>
-                <svg viewBox="0 0 300 100" style={{ width: "100%", height: 100, display: "block" }}>
-                  <defs>
-                    <linearGradient id="retFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"  stopColor="oklch(0.72 0.09 240)" stopOpacity="0.35"/>
-                      <stop offset="100%" stopColor="oklch(0.72 0.09 240)" stopOpacity="0"/>
-                    </linearGradient>
-                  </defs>
-                  <path d="M0 20 L40 18 L80 25 L120 35 L160 40 L200 30 L240 25 L280 22 L300 24"
-                    stroke="oklch(0.45 0.10 245)" strokeWidth="1.5" fill="none"/>
-                  <path d="M0 20 L40 18 L80 25 L120 35 L160 40 L200 30 L240 25 L280 22 L300 24 L300 100 L0 100 Z"
-                    fill="url(#retFill)"/>
-                </svg>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--ink-400)", fontFamily: "var(--font-mono)", marginTop: 6 }}>
-                  <span>7d</span><span>30d</span><span>90d</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ReviewView
+            lang={lang}
+            dueItems={dueItems}
+            totalItems={reviewItems.length}
+            currentIdx={reviewIdx}
+            current={currentReview}
+            revealed={revealed}
+            onReveal={() => setRevealed(true)}
+            onRate={rateCurrent}
+            onOpen={(id) => router.push(`/read/${id}`)}
+            t={t}
+          />
         )}
       </main>
 
@@ -516,4 +489,233 @@ export default function Notebook() {
       />
     </div>
   );
+}
+
+/* ============================================================
+   Review view — spaced-repetition card flow.
+   ============================================================ */
+type ReviewProps = {
+  lang: "en" | "zh";
+  dueItems: ReviewItem[];
+  totalItems: number;
+  currentIdx: number;
+  current: ReviewItem | null;
+  revealed: boolean;
+  onReveal: () => void;
+  onRate: (rating: Rating) => void;
+  onOpen: (id: string) => void;
+  t: (k: string) => string;
+};
+
+function ReviewView({
+  lang, dueItems, totalItems, currentIdx, current, revealed, onReveal, onRate, onOpen, t,
+}: ReviewProps) {
+  /* Empty-notebook state — no review cards exist yet. */
+  if (totalItems === 0) {
+    return (
+      <div className="glass" style={{
+        padding: 48, borderRadius: 22, textAlign: "center",
+        display: "flex", flexDirection: "column", gap: 12, alignItems: "center",
+        minHeight: 320, justifyContent: "center",
+      }}>
+        <Icon name="brain" size={28} style={{ color: "oklch(0.48 0.10 295)", opacity: 0.6 }}/>
+        <div className="display" style={{ fontSize: 26, letterSpacing: "-0.02em" }}>
+          {t("rev.empty.title")}
+        </div>
+        <div style={{ fontSize: 14, color: "var(--ink-500)", maxWidth: 420, lineHeight: 1.55 }}>
+          {t("rev.empty.body")}
+        </div>
+      </div>
+    );
+  }
+
+  /* All caught up — has cards but nothing due. */
+  if (dueItems.length === 0 || currentIdx >= dueItems.length || !current) {
+    return (
+      <div className="glass" style={{
+        padding: 48, borderRadius: 22, textAlign: "center",
+        display: "flex", flexDirection: "column", gap: 12, alignItems: "center",
+        minHeight: 320, justifyContent: "center",
+      }}>
+        <Icon name="check" size={28} style={{ color: "var(--accent-deep)", opacity: 0.7 }}/>
+        <div className="display" style={{ fontSize: 28, letterSpacing: "-0.02em" }}>
+          {t("rev.done.title")}
+        </div>
+        <div style={{ fontSize: 14, color: "var(--ink-500)", maxWidth: 440, lineHeight: 1.55 }}>
+          {t("rev.done.body")}
+        </div>
+      </div>
+    );
+  }
+
+  const source = current.source;
+  const progress = (currentIdx + 1) / dueItems.length;
+  const upNext = dueItems.slice(currentIdx + 1, currentIdx + 4);
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      {/* Active card */}
+      <div className="glass" style={{
+        padding: 32, borderRadius: 22,
+        display: "flex", flexDirection: "column", gap: 20,
+        minHeight: 420,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span className="eyebrow">
+            {t("rev.progress").replace("{n}", String(currentIdx + 1)).replace("{total}", String(dueItems.length))}
+          </span>
+          <div style={{ flex: 1, maxWidth: 140 }}><Progress value={progress}/></div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 12, color: "var(--ink-500)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name={source.type} size={12}/>
+            <span className="truncate">{source.author}</span>
+            {current.state?.lastReviewedAt && (
+              <>
+                <span style={{ color: "var(--ink-300)" }}>·</span>
+                <span>{lastReviewedLabel(current.state.lastReviewedAt, lang)}</span>
+              </>
+            )}
+          </div>
+          <h3
+            className="display"
+            style={{
+              fontSize: 28, margin: 0, letterSpacing: "-0.02em", lineHeight: 1.15,
+              cursor: "pointer",
+            }}
+            onClick={() => onOpen(source.id)}
+            title={lang === "zh" ? "打开这篇" : "Open this source"}
+          >
+            {source.title}
+          </h3>
+        </div>
+
+        {/* Answer zone: hidden → reveal prompt / shown → the quote */}
+        <div style={{
+          padding: 20, borderRadius: 16,
+          background: revealed
+            ? `linear-gradient(180deg, oklch(0.95 0.03 ${source.hue} / 0.7), oklch(0.97 0.02 ${source.hue} / 0.3))`
+            : "rgba(23,42,82,0.03)",
+          border: "0.5px solid rgba(23,42,82,0.06)",
+          flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "background 300ms var(--ease)",
+          minHeight: 120,
+        }}>
+          {revealed ? (
+            <blockquote className="display" style={{
+              margin: 0, fontSize: 22, lineHeight: 1.35, textAlign: "center",
+              color: "var(--ink-900)", fontStyle: "italic", letterSpacing: "-0.015em",
+            }}>
+              &ldquo;{current.quote}&rdquo;
+            </blockquote>
+          ) : (
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 14, alignItems: "center",
+              color: "var(--ink-500)",
+            }}>
+              <div style={{ fontSize: 14, fontStyle: "italic" }}>{t("rev.prompt")}</div>
+              <button
+                onClick={onReveal}
+                className="btn btn-ghost pressable"
+                style={{ padding: "9px 16px", fontSize: 13 }}
+              >
+                <Icon name="sparkle" size={13}/> {t("rev.reveal")}
+              </button>
+              <div style={{ fontSize: 11, color: "var(--ink-400)" }}>
+                {t("rev.revealHint")}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Rating row — disabled until revealed */}
+        <div style={{ display: "flex", gap: 8 }}>
+          {([
+            { rating: "hazy"    as const, label: t("rev.rate.hazy"),    hue: 25  },
+            { rating: "getting" as const, label: t("rev.rate.getting"), hue: 85  },
+            { rating: "solid"   as const, label: t("rev.rate.solid"),   hue: 170 },
+            { rating: "teach"   as const, label: t("rev.rate.teach"),   hue: 235 },
+          ]).map(b => (
+            <button
+              key={b.rating}
+              onClick={() => onRate(b.rating)}
+              disabled={!revealed}
+              style={{
+                flex: 1, padding: "10px 8px",
+                border: `0.5px solid ${revealed ? `oklch(0.75 0.10 ${b.hue} / 0.5)` : "rgba(23,42,82,0.08)"}`,
+                background: revealed ? `oklch(0.96 0.04 ${b.hue} / 0.5)` : "rgba(255,255,255,0.35)",
+                borderRadius: 10, fontSize: 12, fontWeight: 500,
+                cursor: revealed ? "pointer" : "not-allowed",
+                fontFamily: "var(--font-ui)",
+                color: revealed ? `oklch(0.40 0.10 ${b.hue})` : "var(--ink-400)",
+                transition: "all 220ms var(--ease)",
+                opacity: revealed ? 1 : 0.55,
+              }}
+              onMouseEnter={e => {
+                if (!revealed) return;
+                e.currentTarget.style.background = `oklch(0.98 0.03 ${b.hue} / 0.8)`;
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={e => {
+                if (!revealed) return;
+                e.currentTarget.style.background = `oklch(0.96 0.04 ${b.hue} / 0.5)`;
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Side column — up next */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="glass" style={{ padding: 22, borderRadius: 18 }}>
+          <div className="eyebrow" style={{ marginBottom: 10 }}>{t("rev.upnext")}</div>
+          {upNext.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {upNext.map(it => (
+                <div key={it.source.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "8px 10px", borderRadius: 10,
+                  background: "rgba(255,255,255,0.4)",
+                }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 6,
+                    background: `oklch(0.95 0.03 ${it.source.hue})`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: `oklch(0.40 0.09 ${it.source.hue})`,
+                  }}><Icon name={it.source.type} size={11}/></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 550 }} className="truncate">{it.source.title}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--ink-400)" }}>{it.source.author}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--ink-500)", lineHeight: 1.55 }}>
+              {lang === "zh"
+                ? "这是今天最后一张卡。"
+                : "This is the last card due today."}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function lastReviewedLabel(iso: string, lang: "en" | "zh"): string {
+  const elapsed = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(elapsed / 86_400_000);
+  if (lang === "zh") {
+    if (days < 1) return "今天复习过";
+    if (days === 1) return "昨天复习过";
+    return `${days} 天前复习过`;
+  }
+  if (days < 1) return "reviewed today";
+  if (days === 1) return "reviewed yesterday";
+  return `reviewed ${days} days ago`;
 }

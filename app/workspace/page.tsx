@@ -8,9 +8,9 @@ import { LangSwitch, Segmented } from "@/components/primitives";
 import { NoteTagEditor } from "@/components/note-tag-editor";
 import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
 import {
-  getHighlights, getNote, getSummary, getTakeaways, listSources,
-  setNoteTags, summarize,
-  type Highlight, type Source, type SourceType, type Summary, type Takeaway,
+  getHighlights, getNote, getReviewItems, getSummary, getTakeaways,
+  listSources, setNoteTags, summarize,
+  type Highlight, type ReviewItem, type Source, type SourceType, type Summary, type Takeaway,
 } from "@/lib/api";
 
 type Tab = "summary" | "takeaways" | "explain";
@@ -21,6 +21,7 @@ export default function Workspace() {
 
   /* ================ state ================ */
   const [sources, setSources] = useState<Source[]>([]);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("summary");
   const [sourceType, setSourceType] = useState<SourceType>("blog");
   const [url, setUrl] = useState("");
@@ -41,6 +42,7 @@ export default function Workspace() {
   useEffect(() => {
     let cancelled = false;
     listSources().then(s => { if (!cancelled) setSources(s); });
+    getReviewItems({ onlyDue: true }).then(items => { if (!cancelled) setReviewItems(items); });
     return () => { cancelled = true; };
   }, []);
 
@@ -122,11 +124,12 @@ export default function Workspace() {
       .sort((a, b) => b.count - a.count);
   }, [sources, t]);
 
-  const nav: { id: string; label: string; icon: IconName; active?: boolean; disabled?: boolean; go?: () => void }[] = [
+  const dueCount = reviewItems.length;
+  const nav: { id: string; label: string; icon: IconName; active?: boolean; disabled?: boolean; badge?: number; go?: () => void }[] = [
     { id: "home",      label: t("dash.nav.home"),     icon: "home",     go: () => router.push("/") },
     { id: "dashboard", label: t("dash.nav.work"),     icon: "sparkle",  active: true },
     { id: "notebook",  label: t("dash.nav.notebook"), icon: "notebook", go: () => router.push("/notebook") },
-    { id: "review",    label: t("dash.nav.review"),   icon: "brain",    disabled: true },
+    { id: "review",    label: t("dash.nav.review"),   icon: "brain",    go: () => router.push("/notebook?view=review"), badge: dueCount || undefined },
     { id: "archive",   label: t("dash.nav.archive"),  icon: "archive",  disabled: true },
   ];
 
@@ -184,7 +187,16 @@ export default function Workspace() {
               }}
             >
               <Icon name={n.icon} size={15}/>
-              {n.label}
+              <span style={{ flex: 1 }}>{n.label}</span>
+              {n.badge !== undefined && n.badge > 0 && (
+                <span style={{
+                  fontSize: 10.5, fontWeight: 600,
+                  padding: "1px 7px", borderRadius: 999,
+                  background: "oklch(0.42 0.10 248)",
+                  color: "white",
+                  fontFamily: "var(--font-mono)",
+                }}>{n.badge}</span>
+              )}
             </button>
           ))}
         </nav>

@@ -242,6 +242,28 @@ export const DICT = {
     en: "Everything's free during the beta. Sign-up comes later.",
     zh: "公测期间所有功能都免费。之后才会开通注册。",
   },
+
+  /* ===== Review flow ===== */
+  "rev.prompt":        { en: "What did you take from this?", zh: "这份内容给你留下了什么？" },
+  "rev.reveal":        { en: "Show the line",                zh: "给我看那句话" },
+  "rev.rate.hazy":     { en: "Still hazy",                   zh: "还有点模糊" },
+  "rev.rate.getting":  { en: "Getting it",                   zh: "有点感觉" },
+  "rev.rate.solid":    { en: "Solid",                        zh: "记住了" },
+  "rev.rate.teach":    { en: "Could teach it",               zh: "能讲给别人听" },
+  "rev.progress":      { en: "Card {n} of {total}",          zh: "第 {n} / {total} 张" },
+  "rev.upnext":        { en: "Up next",                      zh: "接下来" },
+  "rev.done.title":    { en: "All caught up.",               zh: "都复习完了。" },
+  "rev.done.body":     {
+    en: "Nothing is due right now. Come back tomorrow, or keep adding sources in the meantime.",
+    zh: "现在没有到期的卡片。明天再来，或者先继续往笔记本里加东西。",
+  },
+  "rev.empty.title":   { en: "No cards yet.",                zh: "还没有复习卡。" },
+  "rev.empty.body":    {
+    en: "Mindleaf builds a review card from each source's memorable line. Add your first source and come back.",
+    zh: "每份内容里那句最值得记住的话，会自动变成一张复习卡。先加一份内容，再回来。",
+  },
+  "rev.revealHint":    { en: "Take a moment. Then show the line.", zh: "先想一下，再看那句话。" },
+  "rev.nextReview":    { en: "Next review in {days}",        zh: "{days}后再复习" },
   "det.tag.placeholder": { en: "tag…",            zh: "标签……" },
   "det.tag.add":         { en: "+ add",           zh: "+ 添加" },
   "det.connected.empty": { en: "Add more sources to your notebook to see related notes here.", zh: "再往笔记本里加些内容，这里就会出现相关笔记。" },

@@ -1,6 +1,6 @@
 import type {
-  Collection, Highlight, Note, ReviewCard, Source, SourceType,
-  SummarizeRequest, SummarizeResponse, Summary, Takeaway,
+  Collection, Highlight, Note, Rating, ReviewCard, ReviewItem, ReviewState,
+  Source, SourceType, SummarizeRequest, SummarizeResponse, Summary, Takeaway,
 } from "./types";
 
 /* ============================================================
@@ -360,6 +360,102 @@ export async function getReviewQueue(): Promise<ReviewCard[]> {
   ensureSeeded();
   await sleep(30);
   return read<ReviewCard[]>("review", SEED_REVIEW);
+}
+
+/* ============================================================
+   Review scheduling — simplified SM-2.
+   State is stored in a single map: sourceId → ReviewState.
+   Sources without a state are treated as overdue.
+   ============================================================ */
+
+const REVIEW_STATES_KEY = "reviewStates";
+
+function readReviewStates(): Record<string, ReviewState> {
+  return read<Record<string, ReviewState>>(REVIEW_STATES_KEY, {});
+}
+
+export async function getReviewState(sourceId: string): Promise<ReviewState | null> {
+  ensureSeeded();
+  const map = readReviewStates();
+  return map[sourceId] ?? null;
+}
+
+/* All sources with a memorableQuote, paired with their review state (if
+   any). Sorted so that overdue items come first, then items never
+   reviewed, then items with the earliest upcoming dueAt. */
+export async function getReviewItems(opts: { onlyDue?: boolean } = {}): Promise<ReviewItem[]> {
+  ensureSeeded();
+  await sleep(40);
+  const sources = read<Source[]>("sources", SEED_SOURCES);
+  const states = readReviewStates();
+  const summaries = read<Record<string, Summary>>("summaries", SEED_SUMMARIES);
+  const now = Date.now();
+
+  const items: ReviewItem[] = [];
+  for (const s of sources) {
+    const sum = summaries[s.id];
+    const quote = sum?.memorableQuote;
+    if (!quote) continue;
+    const state = states[s.id] ?? null;
+    const due = !state || new Date(state.dueAt).getTime() <= now;
+    if (opts.onlyDue && !due) continue;
+    items.push({ source: s, state, quote });
+  }
+
+  items.sort((a, b) => {
+    const ad = a.state ? new Date(a.state.dueAt).getTime() : 0;
+    const bd = b.state ? new Date(b.state.dueAt).getTime() : 0;
+    return ad - bd; /* ascending → overdue & never-reviewed float to the top */
+  });
+  return items;
+}
+
+export async function rateReview(sourceId: string, rating: Rating): Promise<ReviewState> {
+  ensureSeeded();
+  await sleep(30);
+  const map = readReviewStates();
+  const prev = map[sourceId];
+  const next = nextSchedule(sourceId, prev ?? null, rating);
+  map[sourceId] = next;
+  write(REVIEW_STATES_KEY, map);
+  return next;
+}
+
+/* Simplified SM-2. Not optimized for memory science — just enough to
+   feel progressive and stop nagging the user about things they know.  */
+function nextSchedule(sourceId: string, prev: ReviewState | null, rating: Rating): ReviewState {
+  const nowMs = Date.now();
+  const DAY_MS = 86_400_000;
+  let ease = prev?.ease ?? 2.5;
+  let interval = prev?.intervalDays ?? 0;
+
+  switch (rating) {
+    case "hazy":
+      ease = Math.max(1.3, ease - 0.25);
+      interval = 1;
+      break;
+    case "getting":
+      ease = Math.max(1.3, ease - 0.1);
+      interval = Math.max(1, interval);
+      break;
+    case "solid":
+      interval = Math.max(2, Math.round((interval || 1) * ease));
+      break;
+    case "teach":
+      ease = Math.min(3.0, ease + 0.15);
+      interval = Math.max(3, Math.round((interval || 1) * ease * 1.3));
+      break;
+  }
+
+  const dueAt = new Date(nowMs + interval * DAY_MS).toISOString();
+  return {
+    sourceId,
+    ease,
+    intervalDays: interval,
+    dueAt,
+    lastReviewedAt: new Date(nowMs).toISOString(),
+    reviewCount: (prev?.reviewCount ?? 0) + 1,
+  };
 }
 
 /* Persists a fully-formed SummarizeResponse to localStorage.

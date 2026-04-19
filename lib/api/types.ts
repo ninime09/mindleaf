@@ -70,6 +70,27 @@ export type ReviewCard = {
   intervalDays: number;
 };
 
+/* Per-source spaced-repetition state. One entry per source that has
+   been reviewed at least once. Sources without a state are treated as
+   "never reviewed" — effectively due on first visit. */
+export type ReviewState = {
+  sourceId: string;
+  ease: number;          /* SM-2 ease factor — starts at 2.5 */
+  intervalDays: number;  /* days until next review */
+  dueAt: string;         /* ISO */
+  lastReviewedAt?: string;
+  reviewCount: number;
+};
+
+export type Rating = "hazy" | "getting" | "solid" | "teach";
+
+/* A review item is a source + its current state + the quote to recall. */
+export type ReviewItem = {
+  source: Source;
+  state: ReviewState | null;
+  quote: string;
+};
+
 export type SummarizeRequest = {
   url: string;
   type: SourceType;
