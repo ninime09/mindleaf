@@ -255,6 +255,11 @@ export const DICT = {
     en: "Everything's free during the beta. Sign-up comes later.",
     zh: "公测期间所有功能都免费。之后才会开通注册。",
   },
+  "toast.signinSoon":  {
+    en: "Sign-in lands when we turn on accounts. Until then, every notebook lives on this device.",
+    zh: "账户功能上线后就能登录。在那之前，笔记本都在你这台设备上。",
+  },
+  "toast.pageSoon":    { en: "That page is still being written.", zh: "这个页面还在写。" },
 
   /* ===== Review flow ===== */
   "rev.prompt":        { en: "What did you take from this?", zh: "这份内容给你留下了什么？" },

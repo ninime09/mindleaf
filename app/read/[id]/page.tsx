@@ -142,7 +142,6 @@ function CanonicalDetail({ id }: { id: string }) {
             >
               <Icon name="archive" size={14}/>
             </button>
-            <button className="btn btn-ghost btn-icon"><Icon name="more" size={14}/></button>
           </div>
         </div>
       </div>

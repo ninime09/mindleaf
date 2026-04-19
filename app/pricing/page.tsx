@@ -8,6 +8,19 @@ import { LangSwitch, Orb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight } from "@/components/interactions";
 import { useToast } from "@/components/toast";
 
+const MINDLEAF_HANDLE_URL = "https://github.com/ninime09/mindleaf";
+const footerLinkStyle: React.CSSProperties = {
+  color: "inherit",
+  textDecoration: "none",
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  fontSize: 12.5,
+  fontFamily: "var(--font-ui)",
+  cursor: "pointer",
+  letterSpacing: "-0.005em",
+};
+
 type TierId = "seedling" | "reader" | "studio";
 
 type Tier = {
@@ -37,6 +50,8 @@ export default function Pricing() {
     push(t("toast.betaFree"), { icon: "sparkle" });
     setTimeout(() => router.push("/workspace"), 650);
   };
+  const onSignin = () => push(t("toast.signinSoon"), { kind: "info", icon: "bolt" });
+  const onComingPage = () => push(t("toast.pageSoon"), { kind: "info" });
 
   const handleNav = (key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -135,7 +150,7 @@ export default function Pricing() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
             <LangSwitch compact/>
-            <button className="btn btn-ghost pressable" style={{ padding: "8px 14px", fontSize: 13 }}>{t("nav.signin")}</button>
+            <button onClick={onSignin} className="btn btn-ghost pressable" style={{ padding: "8px 14px", fontSize: 13 }}>{t("nav.signin")}</button>
             <Magnetic strength={0.3}>
               <button className="btn btn-primary pressable" onClick={onEnter} style={{ padding: "8px 16px", fontSize: 13 }}>
                 {t("nav.start")} <Icon name="arrow" size={14}/>
@@ -402,10 +417,10 @@ export default function Pricing() {
         }}>
           <Logo size={20}/>
           <div style={{ display: "flex", gap: 24, fontSize: 12.5, color: "var(--ink-500)" }}>
-            <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Privacy</a>
-            <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Terms</a>
-            <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Manifesto</a>
-            <a href="#" style={{ color: "inherit", textDecoration: "none" }}>@mindleaf</a>
+            <button onClick={onComingPage} style={footerLinkStyle}>Privacy</button>
+            <button onClick={onComingPage} style={footerLinkStyle}>Terms</button>
+            <button onClick={onComingPage} style={footerLinkStyle}>Manifesto</button>
+            <a href={MINDLEAF_HANDLE_URL} target="_blank" rel="noreferrer" style={{ ...footerLinkStyle, background: "transparent", border: "none", padding: 0 }}>@mindleaf</a>
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-400)" }}>© 2026 Mindleaf</div>
         </footer>

@@ -7,13 +7,30 @@ import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Orb, Segmented, Tag, Thumb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight, TiltCard } from "@/components/interactions";
 import { summarize } from "@/lib/api";
+import { useToast } from "@/components/toast";
+
+const MINDLEAF_HANDLE_URL = "https://github.com/ninime09/mindleaf";
+
+const footerLinkStyle: React.CSSProperties = {
+  color: "inherit",
+  textDecoration: "none",
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  fontSize: 12.5,
+  fontFamily: "var(--font-ui)",
+  cursor: "pointer",
+  letterSpacing: "-0.005em",
+};
 
 type Mode = "blog" | "podcast" | "video";
 
 export default function Landing() {
   const { t, lang } = useLang();
   const router = useRouter();
+  const { push: pushToast } = useToast();
   const onEnter = () => router.push("/workspace");
+  const onSignin = () => pushToast(t("toast.signinSoon"), { kind: "info", icon: "bolt" });
 
   const handleNav = (key: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -88,7 +105,7 @@ export default function Landing() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
             <LangSwitch compact/>
-            <button className="btn btn-ghost pressable" style={{ padding: "8px 14px", fontSize: 13 }}>{t("nav.signin")}</button>
+            <button onClick={onSignin} className="btn btn-ghost pressable" style={{ padding: "8px 14px", fontSize: 13 }}>{t("nav.signin")}</button>
             <Magnetic strength={0.3}>
               <button className="btn btn-primary pressable" onClick={onEnter} style={{ padding: "8px 16px", fontSize: 13 }}>
                 {t("nav.start")} <Icon name="arrow" size={14}/>
@@ -549,6 +566,8 @@ function NotebookStack({ cards, meta }: { cards: StackCard[]; meta: string }) {
 
 function CtaSection({ onEnter }: { onEnter: () => void }) {
   const { t } = useLang();
+  const { push: pushToast } = useToast();
+  const onComingPage = () => pushToast(t("toast.pageSoon"), { kind: "info" });
   return (
     <section style={{ maxWidth: 1240, margin: "0 auto", padding: "80px 24px 120px" }}>
       <Reveal>
@@ -569,11 +588,6 @@ function CtaSection({ onEnter }: { onEnter: () => void }) {
               {t("cta.open")} <Icon name="arrow" size={15}/>
             </button>
           </Magnetic>
-          <Magnetic strength={0.25}>
-            <button className="btn btn-ghost pressable" style={{ padding: "14px 20px", fontSize: 14 }}>
-              <Icon name="play" size={13}/> {t("cta.demo")}
-            </button>
-          </Magnetic>
         </div>
       </div>
       </Spotlight>
@@ -586,10 +600,10 @@ function CtaSection({ onEnter }: { onEnter: () => void }) {
       }}>
         <Logo size={20}/>
         <div style={{ display: "flex", gap: 24, fontSize: 12.5, color: "var(--ink-500)" }}>
-          <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Privacy</a>
-          <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Terms</a>
-          <a href="#" style={{ color: "inherit", textDecoration: "none" }}>Manifesto</a>
-          <a href="#" style={{ color: "inherit", textDecoration: "none" }}>@mindleaf</a>
+          <button onClick={onComingPage} style={footerLinkStyle}>Privacy</button>
+          <button onClick={onComingPage} style={footerLinkStyle}>Terms</button>
+          <button onClick={onComingPage} style={footerLinkStyle}>Manifesto</button>
+          <a href={MINDLEAF_HANDLE_URL} target="_blank" rel="noreferrer" style={{ ...footerLinkStyle, background: "transparent", border: "none", padding: 0 }}>@mindleaf</a>
         </div>
         <div style={{ fontSize: 12, color: "var(--ink-400)" }}>© 2026 Mindleaf</div>
       </footer>
