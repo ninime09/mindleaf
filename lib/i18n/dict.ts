@@ -231,6 +231,13 @@ export const DICT = {
   "nbp.view.grid":     { en: "Grid",               zh: "网格" },
   "nbp.view.list":     { en: "List",               zh: "列表" },
   "nbp.view.rev":      { en: "Review",             zh: "复习" },
+  "det.hls.empty":     {
+    en: "Select any sentence in the summary, takeaways or beginner explanation to highlight it.",
+    zh: "在摘要、要点或入门讲解里，选中任意一句话就能高亮起来。",
+  },
+  "det.tag.placeholder": { en: "tag…",            zh: "标签……" },
+  "det.tag.add":         { en: "+ add",           zh: "+ 添加" },
+  "det.connected.empty": { en: "Add more sources to your notebook to see related notes here.", zh: "再往笔记本里加些内容，这里就会出现相关笔记。" },
   "nbp.delete":        { en: "Delete",             zh: "删除" },
   "nbp.delete.title":  { en: "Delete this card?",  zh: "确定删除这则吗？" },
   "nbp.delete.body":   {

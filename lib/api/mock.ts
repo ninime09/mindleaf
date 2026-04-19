@@ -272,6 +272,24 @@ export async function saveNote(sourceId: string, body: string): Promise<Note> {
   return next;
 }
 
+export async function setNoteTags(sourceId: string, tags: string[]): Promise<Note> {
+  ensureSeeded();
+  await sleep(40);
+  const map = read<Record<string, Note>>("notes", SEED_NOTES);
+  const existing = map[sourceId];
+  const cleanTags = Array.from(new Set(tags.map(t => t.trim()).filter(Boolean)));
+  const next: Note = {
+    id: existing?.id ?? `n-${sourceId}`,
+    sourceId,
+    body: existing?.body ?? "",
+    tags: cleanTags,
+    updatedAt: new Date().toISOString(),
+  };
+  map[sourceId] = next;
+  write("notes", map);
+  return next;
+}
+
 export async function getReviewQueue(): Promise<ReviewCard[]> {
   ensureSeeded();
   await sleep(30);

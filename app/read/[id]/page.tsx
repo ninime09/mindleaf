@@ -6,8 +6,9 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon } from "@/components/icons";
 import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
 import {
-  getHighlights, getNote, getSource, getSummary, getTakeaways, saveNote,
-  type Highlight, type Source, type Summary, type Takeaway,
+  getHighlights, getNote, getSource, getSummary, getTakeaways,
+  listSources, saveNote, setNoteTags,
+  type Highlight, type Note, type Source, type Summary, type Takeaway,
 } from "@/lib/api";
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
@@ -491,6 +492,8 @@ function DynamicDetail({ id }: { id: string }) {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [takeaways, setTakeaways] = useState<Takeaway[]>([]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [siblings, setSiblings] = useState<Source[]>([]);
+  const [noteTags, setNoteTagsState] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
@@ -500,17 +503,36 @@ function DynamicDetail({ id }: { id: string }) {
     let cancelled = false;
     Promise.all([
       getSource(id), getSummary(id), getTakeaways(id), getHighlights(id),
-    ]).then(([s, sum, tk, hl]) => {
+      listSources(), getNote(id),
+    ]).then(([s, sum, tk, hl, all, note]) => {
       if (cancelled) return;
       if (!s) { setNotFound(true); setLoading(false); return; }
       setSource(s);
       setSummary(sum);
       setTakeaways(tk);
       setHighlights(hl);
+      setSiblings(all);
+      setNoteTagsState(note?.tags ?? []);
       setLoading(false);
     });
     return () => { cancelled = true; };
   }, [id]);
+
+  /* Tag editing — fire-and-forget persistence; UI updates optimistically. */
+  const addNoteTag = async (tag: string) => {
+    const clean = tag.trim();
+    if (!clean || noteTags.includes(clean)) return;
+    const next = [...noteTags, clean];
+    setNoteTagsState(next);
+    const saved: Note = await setNoteTags(id, next);
+    setNoteTagsState(saved.tags);
+  };
+  const removeNoteTag = async (tag: string) => {
+    const next = noteTags.filter(t => t !== tag);
+    setNoteTagsState(next);
+    const saved: Note = await setNoteTags(id, next);
+    setNoteTagsState(saved.tags);
+  };
 
   /* Scroll spy — same approach as CanonicalDetail. */
   useEffect(() => {
@@ -839,17 +861,59 @@ function DynamicDetail({ id }: { id: string }) {
                 letterSpacing: "-0.005em",
               }}
             />
+            <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 11.5, color: "var(--ink-500)", marginRight: 4 }}>{t("det.notes.addTag")}</span>
+              {noteTags.map(tg => (
+                <NoteTagPill key={tg} label={tg} onRemove={() => removeNoteTag(tg)}/>
+              ))}
+              <AddTagButton onAdd={addNoteTag} placeholder={t("det.tag.placeholder")} addLabel={t("det.tag.add")}/>
+            </div>
           </section>
+
+          {/* PREV / NEXT */}
+          {(() => {
+            const sorted = [...siblings].sort((a, b) => a.addedAt < b.addedAt ? 1 : -1);
+            const idx = sorted.findIndex(s => s.id === id);
+            const prev = idx > 0 ? sorted[idx - 1] : null;
+            const next = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null;
+            if (!prev && !next) return null;
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 60 }}>
+                {prev ? (
+                  <a href={`/read/${prev.id}`} className="glass" style={{
+                    padding: 18, borderRadius: 14,
+                    textDecoration: "none", color: "inherit",
+                    display: "flex", flexDirection: "column", gap: 4,
+                  }}>
+                    <div style={{ fontSize: 11, color: "var(--ink-400)" }}>{t("det.prev")}</div>
+                    <div style={{ fontSize: 14, fontWeight: 550 }} className="truncate">{prev.title}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-500)" }} className="truncate">{prev.author}</div>
+                  </a>
+                ) : <div/>}
+                {next ? (
+                  <a href={`/read/${next.id}`} className="glass" style={{
+                    padding: 18, borderRadius: 14,
+                    textDecoration: "none", color: "inherit",
+                    display: "flex", flexDirection: "column", gap: 4, textAlign: "right",
+                  }}>
+                    <div style={{ fontSize: 11, color: "var(--ink-400)" }}>{t("det.next")}</div>
+                    <div style={{ fontSize: 14, fontWeight: 550 }} className="truncate">{next.title}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--ink-500)" }} className="truncate">{next.author}</div>
+                  </a>
+                ) : <div/>}
+              </div>
+            );
+          })()}
         </article>
 
-        {/* RIGHT — highlights + metadata */}
+        {/* RIGHT — highlights + connected + metadata */}
         <aside style={{ position: "sticky", top: 90, alignSelf: "start", display: "flex", flexDirection: "column", gap: 14 }}>
-          {highlights.length > 0 && (
-            <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span className="eyebrow">{t("det.hls")}</span>
-                <span style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)" }}>{highlights.length}</span>
-              </div>
+          <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span className="eyebrow">{t("det.hls")}</span>
+              <span style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)" }}>{highlights.length}</span>
+            </div>
+            {highlights.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {highlights.map(h => (
                   <div key={h.id} style={{
@@ -867,8 +931,53 @@ function DynamicDetail({ id }: { id: string }) {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--ink-500)", lineHeight: 1.55 }}>
+                {t("det.hls.empty")}
+              </div>
+            )}
+          </div>
+
+          {/* Connected — other sources in your notebook */}
+          {(() => {
+            const others = siblings
+              .filter(s => s.id !== id)
+              .sort((a, b) => a.addedAt < b.addedAt ? 1 : -1)
+              .slice(0, 3);
+            return (
+              <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
+                <div className="eyebrow" style={{ marginBottom: 10 }}>{t("det.connected")}</div>
+                {others.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {others.map(n => (
+                      <a key={n.id} href={`/read/${n.id}`} style={{
+                        padding: "8px 10px", borderRadius: 8,
+                        textDecoration: "none", color: "var(--ink-700)",
+                        display: "flex", alignItems: "center", gap: 10,
+                        transition: "all 200ms var(--ease)",
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = "rgba(23,42,82,0.04)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                        <div style={{
+                          width: 22, height: 22, borderRadius: 5,
+                          background: `oklch(0.95 0.03 ${n.hue})`,
+                          flexShrink: 0,
+                        }}/>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 500 }} className="truncate">{n.title}</div>
+                          <div style={{ fontSize: 10.5, color: "var(--ink-400)" }}>{n.author}</div>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: "var(--ink-500)", lineHeight: 1.55 }}>
+                    {t("det.connected.empty")}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="glass" style={{ padding: 18, borderRadius: 16 }}>
             <div className="eyebrow" style={{ marginBottom: 10 }}>{t("det.meta.h")}</div>
@@ -903,6 +1012,108 @@ function DynamicDetail({ id }: { id: string }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   Note tag chips + add-tag input
+   ============================================================ */
+function NoteTagPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "3px 4px 3px 10px",
+      fontSize: 11.5, fontWeight: 500,
+      background: "oklch(0.92 0.05 235 / 0.6)",
+      color: "oklch(0.36 0.10 245)",
+      border: "0.5px solid rgba(23,42,82,0.06)",
+      borderRadius: 999,
+      letterSpacing: "-0.005em",
+    }}>
+      {label}
+      <button
+        onClick={onRemove}
+        aria-label={`Remove ${label}`}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 16, height: 16, borderRadius: 999,
+          border: "none", background: "transparent",
+          color: "currentColor", opacity: 0.6, cursor: "pointer",
+          transition: "opacity 160ms var(--ease)",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={e => { e.currentTarget.style.opacity = "0.6"; }}
+      >
+        <Icon name="x" size={9}/>
+      </button>
+    </span>
+  );
+}
+
+function AddTagButton({ onAdd, placeholder, addLabel }: {
+  onAdd: (tag: string) => void; placeholder: string; addLabel: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) ref.current?.focus();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        style={{
+          padding: "3px 10px",
+          fontSize: 11.5, fontWeight: 500,
+          color: "var(--ink-500)",
+          background: "rgba(23,42,82,0.04)",
+          border: "0.5px dashed rgba(23,42,82,0.2)",
+          borderRadius: 999, cursor: "pointer",
+          letterSpacing: "-0.005em",
+          fontFamily: "var(--font-ui)",
+        }}
+      >
+        {addLabel}
+      </button>
+    );
+  }
+  return (
+    <input
+      ref={ref}
+      value={value}
+      onChange={e => setValue(e.target.value)}
+      onKeyDown={e => {
+        if (e.key === "Enter") {
+          if (value.trim()) onAdd(value);
+          setValue("");
+          setEditing(false);
+        } else if (e.key === "Escape") {
+          setValue("");
+          setEditing(false);
+        }
+      }}
+      onBlur={() => {
+        if (value.trim()) onAdd(value);
+        setValue("");
+        setEditing(false);
+      }}
+      placeholder={placeholder}
+      style={{
+        padding: "3px 10px",
+        fontSize: 11.5, fontWeight: 500,
+        color: "var(--ink-900)",
+        background: "rgba(255,255,255,0.7)",
+        border: "0.5px solid oklch(0.65 0.10 245 / 0.5)",
+        outline: "none",
+        borderRadius: 999,
+        width: 110,
+        fontFamily: "var(--font-ui)",
+        letterSpacing: "-0.005em",
+      }}
+    />
   );
 }
 

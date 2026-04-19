@@ -15,6 +15,7 @@ export {
   getHighlights,
   getNote,
   saveNote,
+  setNoteTags,
   deleteSource,
   getReviewQueue,
   persistSummarizeResponse,
