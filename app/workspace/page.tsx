@@ -130,7 +130,7 @@ export default function Workspace() {
     { id: "dashboard", label: t("dash.nav.work"),     icon: "sparkle",  active: true },
     { id: "notebook",  label: t("dash.nav.notebook"), icon: "notebook", go: () => router.push("/notebook") },
     { id: "review",    label: t("dash.nav.review"),   icon: "brain",    go: () => router.push("/notebook?view=review"), badge: dueCount || undefined },
-    { id: "archive",   label: t("dash.nav.archive"),  icon: "archive",  disabled: true },
+    { id: "archive",   label: t("dash.nav.archive"),  icon: "archive",  go: () => router.push("/notebook?view=archive") },
   ];
 
   const hasNotes = sources.length > 0;

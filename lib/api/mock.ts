@@ -179,14 +179,24 @@ export function __resetMockStore() {
    Public API surface — stable shape, ready to swap for real calls.
    ============================================================ */
 
-export async function listSources(opts?: { collectionId?: string; tag?: string }): Promise<Source[]> {
+export async function listSources(opts?: {
+  collectionId?: string;
+  tag?: string;
+  archived?: boolean | "all";  /* default false (hide archived); true = archived only; "all" = both */
+}): Promise<Source[]> {
   ensureSeeded();
   await sleep(40);
   const all = read<Source[]>("sources", SEED_SOURCES);
-  return all.filter(s =>
-    (!opts?.collectionId || opts.collectionId === "all" || s.collectionId === opts.collectionId) &&
-    (!opts?.tag || s.tags.includes(opts.tag))
-  );
+  const archivedFilter = opts?.archived ?? false;
+  return all.filter(s => {
+    if (archivedFilter !== "all") {
+      const isArchived = !!s.archived;
+      if (isArchived !== archivedFilter) return false;
+    }
+    if (opts?.collectionId && opts.collectionId !== "all" && s.collectionId !== opts.collectionId) return false;
+    if (opts?.tag && !s.tags.includes(opts.tag)) return false;
+    return true;
+  });
 }
 
 export async function getSource(id: string): Promise<Source | null> {
@@ -280,6 +290,25 @@ export async function getNote(sourceId: string): Promise<Note | null> {
   await sleep(20);
   const map = read<Record<string, Note>>("notes", SEED_NOTES);
   return map[sourceId] ?? null;
+}
+
+/* Toggle the archived flag on a source. Returns the new value, or
+   null if the source doesn't exist. Also stamps archivedAt when moving
+   into the archive so we can sort or display "archived 3 days ago". */
+export async function toggleArchive(id: string): Promise<boolean | null> {
+  ensureSeeded();
+  await sleep(30);
+  const sources = read<Source[]>("sources", SEED_SOURCES);
+  const idx = sources.findIndex(s => s.id === id);
+  if (idx < 0) return null;
+  const next = !sources[idx].archived;
+  sources[idx] = {
+    ...sources[idx],
+    archived: next,
+    archivedAt: next ? new Date().toISOString() : undefined,
+  };
+  write("sources", sources);
+  return next;
 }
 
 /* Toggle the bookmarked flag on a source. Returns the new value, or

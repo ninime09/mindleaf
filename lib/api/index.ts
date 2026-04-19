@@ -20,6 +20,7 @@ export {
   saveNote,
   setNoteTags,
   toggleBookmark,
+  toggleArchive,
   deleteSource,
   getReviewQueue,
   getReviewItems,

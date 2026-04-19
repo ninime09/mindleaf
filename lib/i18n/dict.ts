@@ -238,6 +238,19 @@ export const DICT = {
   "toast.linkCopied":  { en: "Link copied",        zh: "已复制链接" },
   "toast.bookmarked":  { en: "Saved to bookmarks", zh: "已收藏" },
   "toast.unbookmarked":{ en: "Removed from bookmarks", zh: "已移出收藏" },
+  "toast.archived":    { en: "Moved to archive",    zh: "已归档" },
+  "toast.unarchived":  { en: "Restored to notebook", zh: "已还原到笔记本" },
+  "nbp.archive":       { en: "Archive",             zh: "归档" },
+  "nbp.unarchive":     { en: "Unarchive",           zh: "取消归档" },
+  "nbp.archive.title": { en: "Archived notes",      zh: "归档的笔记" },
+  "nbp.archive.sub":   {
+    en: "Set aside, out of your main notebook, but still yours. Unarchive any to bring it back.",
+    zh: "先放一边，不在主笔记本里，但仍然属于你。随时可以取消归档还原回去。",
+  },
+  "nbp.archive.empty": {
+    en: "Nothing archived yet.",
+    zh: "还没有归档的内容。",
+  },
   "toast.betaFree":    {
     en: "Everything's free during the beta. Sign-up comes later.",
     zh: "公测期间所有功能都免费。之后才会开通注册。",

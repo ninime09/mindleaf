@@ -8,7 +8,7 @@ import { LangSwitch, Orb, Progress, Tag } from "@/components/primitives";
 import {
   addHighlight, deleteHighlight, getHighlights, getNote, getSource,
   getSummary, getTakeaways, listSources, setNoteTags,
-  toggleBookmark, updateHighlightAnnotation,
+  toggleArchive, toggleBookmark, updateHighlightAnnotation,
   type Highlight, type Note, type Source, type Summary, type Takeaway,
 } from "@/lib/api";
 import { Highlightable } from "@/components/highlightable";
@@ -16,14 +16,19 @@ import { NoteTagEditor } from "@/components/note-tag-editor";
 import { useToast } from "@/components/toast";
 import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
 
-/* Shared bookmark/share wiring for both CanonicalDetail and DynamicDetail. */
-function useBookmarkAndShare(id: string) {
+/* Shared bookmark/share/archive wiring for both CanonicalDetail and
+   DynamicDetail. Keeps the three top-bar actions in one place. */
+function useDetailActions(id: string) {
   const { t } = useLang();
   const { push } = useToast();
   const [bookmarked, setBookmarked] = useState<boolean | null>(null);
+  const [archived, setArchived] = useState<boolean | null>(null);
 
   useEffect(() => {
-    getSource(id).then(s => setBookmarked(s?.bookmarked ?? false));
+    getSource(id).then(s => {
+      setBookmarked(s?.bookmarked ?? false);
+      setArchived(s?.archived ?? false);
+    });
   }, [id]);
 
   const onBookmark = async () => {
@@ -31,6 +36,13 @@ function useBookmarkAndShare(id: string) {
     if (next == null) return;
     setBookmarked(next);
     push(t(next ? "toast.bookmarked" : "toast.unbookmarked"), { icon: "bookmark" });
+  };
+
+  const onArchive = async () => {
+    const next = await toggleArchive(id);
+    if (next == null) return;
+    setArchived(next);
+    push(t(next ? "toast.archived" : "toast.unarchived"), { icon: "archive" });
   };
 
   const onShare = async () => {
@@ -43,7 +55,7 @@ function useBookmarkAndShare(id: string) {
     }
   };
 
-  return { bookmarked, onBookmark, onShare };
+  return { bookmarked, archived, onBookmark, onArchive, onShare };
 }
 
 type SectionId = "summary" | "takeaways" | "remember" | "explain" | "notes";
@@ -62,7 +74,7 @@ function CanonicalDetail({ id }: { id: string }) {
   const { t, lang } = useLang();
   const { notes, setNotes, savedAt } = useNotes(id, t("det.notes.body"));
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
-  const { bookmarked, onBookmark, onShare } = useBookmarkAndShare(id);
+  const { bookmarked, archived, onBookmark, onArchive, onShare } = useDetailActions(id);
 
   const sections: { id: SectionId; label: string }[] = [
     { id: "summary",   label: t("det.sec.summary") },
@@ -121,6 +133,14 @@ function CanonicalDetail({ id }: { id: string }) {
             </button>
             <button className="btn btn-ghost btn-icon" onClick={onShare} aria-label="Copy link">
               <Icon name="share" size={14}/>
+            </button>
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={onArchive}
+              aria-label={archived ? "Unarchive" : "Archive"}
+              style={archived ? { color: "var(--ink-900)" } : undefined}
+            >
+              <Icon name="archive" size={14}/>
             </button>
             <button className="btn btn-ghost btn-icon"><Icon name="more" size={14}/></button>
           </div>
@@ -511,7 +531,7 @@ function DynamicDetail({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
   const { notes, setNotes, savedAt } = useNotes(id, "");
-  const { bookmarked, onBookmark, onShare } = useBookmarkAndShare(id);
+  const { bookmarked, archived, onBookmark, onArchive, onShare } = useDetailActions(id);
 
   useEffect(() => {
     let cancelled = false;
@@ -677,6 +697,14 @@ function DynamicDetail({ id }: { id: string }) {
             </button>
             <button className="btn btn-ghost btn-icon" onClick={onShare} aria-label="Copy link">
               <Icon name="share" size={14}/>
+            </button>
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={onArchive}
+              aria-label={archived ? "Unarchive" : "Archive"}
+              style={archived ? { color: "var(--ink-900)" } : undefined}
+            >
+              <Icon name="archive" size={14}/>
             </button>
           </div>
         </div>

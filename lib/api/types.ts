@@ -18,6 +18,8 @@ export type Source = {
   notesCount?: number;
   highlightsCount?: number;
   bookmarked?: boolean;
+  archived?: boolean;
+  archivedAt?: string; /* ISO — when it was moved to the archive */
 };
 
 export type Summary = {

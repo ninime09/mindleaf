@@ -7,11 +7,12 @@ import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Progress, Segmented } from "@/components/primitives";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
-  deleteSource, getReviewItems, listSources, rateReview,
+  deleteSource, getReviewItems, listSources, rateReview, toggleArchive,
   type Rating, type ReviewItem, type Source,
 } from "@/lib/api";
+import { useToast } from "@/components/toast";
 
-type View = "grid" | "list" | "review";
+type View = "grid" | "list" | "review" | "archive";
 type CollectionId = "all" | "ml" | "design" | "phil" | "writing" | "learn";
 
 function formatDate(iso: string, lang: "en" | "zh"): string {
@@ -26,6 +27,7 @@ function formatDate(iso: string, lang: "en" | "zh"): string {
 export default function Notebook() {
   const router = useRouter();
   const { t, lang } = useLang();
+  const { push: pushToast } = useToast();
   const [view, setView] = useState<View>("grid");
   const [collection, setCollection] = useState<CollectionId>("all");
   const [tag, setTag] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export default function Notebook() {
 
   useEffect(() => {
     let cancelled = false;
-    listSources().then(s => {
+    listSources({ archived: "all" }).then(s => {
       if (cancelled) return;
       setSources(s);
     });
@@ -50,13 +52,13 @@ export default function Notebook() {
     return () => { cancelled = true; };
   }, []);
 
-  /* Support /notebook?view=review deep-link (e.g. from Workspace nav). */
+  /* Support /notebook?view=review|archive deep-links (from Workspace nav). */
   useEffect(() => {
     if (typeof window === "undefined") return;
     const v = new URLSearchParams(window.location.search).get("view");
-    if (v === "review") {
+    if (v === "review" || v === "archive") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setView("review");
+      setView(v);
     }
   }, []);
 
@@ -65,6 +67,17 @@ export default function Notebook() {
   const askDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setPendingDeleteId(id);
+  };
+
+  const doToggleArchive = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const next = await toggleArchive(id);
+    if (next == null) return;
+    setSources(prev => prev.map(s => s.id === id
+      ? { ...s, archived: next, archivedAt: next ? new Date().toISOString() : undefined }
+      : s
+    ));
+    pushToast(t(next ? "toast.archived" : "toast.unarchived"), { icon: "archive" });
   };
 
   const confirmDelete = async () => {
@@ -104,22 +117,28 @@ export default function Notebook() {
     setRevealed(false);
   };
 
+  /* Most counts and filters operate on "active" sources — i.e. not
+     archived. Archive view pulls from the archived subset instead. */
+  const activeSources = useMemo(() => sources.filter(s => !s.archived), [sources]);
+  const archivedSources = useMemo(() => sources.filter(s => !!s.archived), [sources]);
+
   const collections: { id: CollectionId; label: string; count: number }[] = useMemo(() => [
-    { id: "all",     label: t("nbp.col.all"),     count: sources.length },
-    { id: "ml",      label: t("nbp.col.ml"),      count: sources.filter(c => c.collectionId === "ml").length },
-    { id: "design",  label: t("nbp.col.design"),  count: sources.filter(c => c.collectionId === "design").length },
-    { id: "phil",    label: t("nbp.col.phil"),    count: sources.filter(c => c.collectionId === "phil").length },
-    { id: "writing", label: t("nbp.col.writing"), count: sources.filter(c => c.collectionId === "writing").length },
-    { id: "learn",   label: t("nbp.col.learn"),   count: sources.filter(c => c.collectionId === "learn").length },
-  ], [sources, t]);
+    { id: "all",     label: t("nbp.col.all"),     count: activeSources.length },
+    { id: "ml",      label: t("nbp.col.ml"),      count: activeSources.filter(c => c.collectionId === "ml").length },
+    { id: "design",  label: t("nbp.col.design"),  count: activeSources.filter(c => c.collectionId === "design").length },
+    { id: "phil",    label: t("nbp.col.phil"),    count: activeSources.filter(c => c.collectionId === "phil").length },
+    { id: "writing", label: t("nbp.col.writing"), count: activeSources.filter(c => c.collectionId === "writing").length },
+    { id: "learn",   label: t("nbp.col.learn"),   count: activeSources.filter(c => c.collectionId === "learn").length },
+  ], [activeSources, t]);
 
   const ALL_TAGS = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of sources) for (const tg of s.tags) counts.set(tg, (counts.get(tg) ?? 0) + 1);
+    for (const s of activeSources) for (const tg of s.tags) counts.set(tg, (counts.get(tg) ?? 0) + 1);
     return [...counts.entries()].map(([tname, n]) => ({ t: tname, n })).sort((a, b) => b.n - a.n);
-  }, [sources]);
+  }, [activeSources]);
 
-  const filtered = sources.filter(c => {
+  const poolForView = view === "archive" ? archivedSources : activeSources;
+  const filtered = poolForView.filter(c => {
     if (collection !== "all" && c.collectionId !== collection) return false;
     if (tag && !c.tags.includes(tag)) return false;
     if (q && !((c.title + c.author + (c.takeaway ?? "")).toLowerCase().includes(q.toLowerCase()))) return false;
@@ -240,13 +259,14 @@ export default function Notebook() {
       {/* MAIN */}
       <main style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <div>
-          <div className="eyebrow">{t("nbp.eyebrow")}</div>
+          <div className="eyebrow">{view === "archive" ? t("nbp.archive") : t("nbp.eyebrow")}</div>
           <h1 className="display" style={{ fontSize: 60, margin: "8px 0 4px", letterSpacing: "-0.025em", lineHeight: 1.05 }}>
-            {t("nbp.title")}
+            {view === "archive" ? t("nbp.archive.title") : t("nbp.title")}
           </h1>
           <p style={{ fontSize: 15, color: "var(--ink-500)", maxWidth: 560, marginTop: 18 }}>
-            {filtered.length} {t("nbp.sub.a")} {collection !== "all" && `${t("nbp.sub.in")} ${collections.find(c => c.id === collection)!.label.toLowerCase()}`}{tag && ` ${t("nbp.sub.tagged")} #${tag}`}.
-            {" "}{t("nbp.sub.b")}
+            {view === "archive"
+              ? t("nbp.archive.sub")
+              : <>{filtered.length} {t("nbp.sub.a")} {collection !== "all" && `${t("nbp.sub.in")} ${collections.find(c => c.id === collection)!.label.toLowerCase()}`}{tag && ` ${t("nbp.sub.tagged")} #${tag}`}. {t("nbp.sub.b")}</>}
           </p>
         </div>
 
@@ -273,7 +293,19 @@ export default function Notebook() {
           />
         </div>
 
-        {view === "grid" && (
+        {(view === "grid" || view === "archive") && filtered.length === 0 && (
+          <div className="glass" style={{
+            padding: 40, borderRadius: 18, textAlign: "center",
+            display: "flex", flexDirection: "column", gap: 8, alignItems: "center",
+          }}>
+            <Icon name="archive" size={22} style={{ color: "var(--ink-400)", opacity: 0.6 }}/>
+            <div className="display" style={{ fontSize: 20, letterSpacing: "-0.02em" }}>
+              {view === "archive" ? t("nbp.archive.empty") : (lang === "zh" ? "这里还没有笔记。" : "Nothing to show yet.")}
+            </div>
+          </div>
+        )}
+
+        {(view === "grid" || view === "archive") && filtered.length > 0 && (
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
@@ -321,6 +353,29 @@ export default function Notebook() {
                         fill: c.bookmarked ? "currentColor" : "none",
                       }}
                     />
+                    <button
+                      onClick={e => doToggleArchive(e, c.id)}
+                      aria-label={t(c.archived ? "nbp.unarchive" : "nbp.archive")}
+                      title={t(c.archived ? "nbp.unarchive" : "nbp.archive")}
+                      style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 24, height: 24, padding: 0,
+                        border: "none", background: "transparent",
+                        borderRadius: 7, cursor: "pointer",
+                        color: "var(--ink-400)",
+                        transition: "all 200ms var(--ease)",
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = "rgba(23,42,82,0.06)";
+                        e.currentTarget.style.color = "var(--ink-700)";
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "var(--ink-400)";
+                      }}
+                    >
+                      <Icon name="archive" size={13}/>
+                    </button>
                     <button
                       onClick={e => askDelete(e, c.id)}
                       aria-label={t("nbp.delete")}
@@ -385,7 +440,7 @@ export default function Notebook() {
             {filtered.map((c, i) => {
               const rowStyle: CSSProperties = {
                 display: "grid",
-                gridTemplateColumns: "36px 1fr 200px 140px 100px 32px",
+                gridTemplateColumns: "36px 1fr 200px 140px 100px 32px 32px",
                 alignItems: "center", gap: 16,
                 padding: "14px 18px",
                 borderBottom: i < filtered.length - 1 ? "0.5px solid rgba(23,42,82,0.06)" : "none",
@@ -424,6 +479,30 @@ export default function Notebook() {
                   <div style={{ fontSize: 11, color: "var(--ink-400)", fontFamily: "var(--font-mono)", textAlign: "right" }}>
                     {formatDate(c.addedAt, lang)}
                   </div>
+
+                  <button
+                    onClick={e => doToggleArchive(e, c.id)}
+                    aria-label={t(c.archived ? "nbp.unarchive" : "nbp.archive")}
+                    title={t(c.archived ? "nbp.unarchive" : "nbp.archive")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 28, height: 28, padding: 0,
+                      border: "none", background: "transparent",
+                      borderRadius: 8, cursor: "pointer",
+                      color: "var(--ink-400)",
+                      transition: "all 200ms var(--ease)",
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "rgba(23,42,82,0.06)";
+                      e.currentTarget.style.color = "var(--ink-700)";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--ink-400)";
+                    }}
+                  >
+                    <Icon name="archive" size={13}/>
+                  </button>
 
                   <button
                     onClick={e => askDelete(e, c.id)}
