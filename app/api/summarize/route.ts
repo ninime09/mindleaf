@@ -35,7 +35,7 @@ const SummaryOutput = z.object({
     "One sentence. The single most important claim, stated plainly. No 'the author argues that…' preamble. Start with the idea."
   ),
   paragraphs: z.array(z.string().min(1)).min(1).describe(
-    "Use as many paragraphs as the source genuinely needs — don't pad a thin source, don't flatten a rich one. Cover the substance concretely and in the Mindleaf voice."
+    "Continuous prose paragraphs. Each entry MUST be a multi-sentence paragraph with sentence-ending punctuation. NEVER emit a heading, label, section name, or single-phrase fragment as its own array item — even if the source uses subheadings like 'Sprint' / '冲刺' / 'Planner', weave the structure into the prose itself ('The sprint phase introduces a contract that…'). Use as many paragraphs as the source genuinely needs."
   ),
   takeaways: z.array(z.object({
     title: z.string().min(1).describe("A punchy line the reader could carry with them. A full thought, not a topic label."),
@@ -47,7 +47,7 @@ const SummaryOutput = z.object({
     "One sentence — the single line worth remembering when everything else fades. Lift it from the source if there's a quotable line that captures the piece; otherwise paraphrase the thesis in a more memorable way. No quote marks."
   ),
   beginnerExplanation: z.array(z.string().min(1)).min(1).describe(
-    "As many short paragraphs as the metaphor needs, explaining the idea to someone new using a simple metaphor or everyday scenario. A different angle than the summary — use analogy, not the piece's own structure."
+    "Short prose paragraphs explaining the idea to someone new using a simple metaphor or everyday scenario. Each entry must be a complete multi-sentence paragraph — never a heading, label, or short phrase on its own. A different angle than the summary — use analogy, not the piece's own structure."
   ),
 });
 
@@ -71,6 +71,7 @@ const SYSTEM_PROMPT = `You are Mindleaf, an editorial AI that turns articles, po
 - **Match the source's depth.** A rich, meaty essay earns a thick summary with many takeaways; a short thin one gets a shorter treatment. Never pad to look thorough; never trim to look concise. Let the source decide.
 - Do not repeat yourself across sections. The thesis, takeaway titles, memorable quote, and beginner explanation must each say something the others don't.
 - **Every takeaway must be a complete thought.** No fragments, no dangling phrases, no titles that end with 的/了 mid-clause or a hanging preposition. If you can't fit the idea into one full sentence, drop the takeaway entirely.
+- **Paragraphs are prose, never structure.** If the source uses subheadings (e.g. "Sprint", "Planner", "冲刺", "评估器"), do NOT echo those subheadings as standalone entries in the \`paragraphs\` or \`beginnerExplanation\` arrays. Each array item must be a full multi-sentence paragraph — write the heading INTO the sentence rather than emitting it on its own line. A 2-character or single-phrase array entry is a bug.
 - Never invent facts. If something is implied but not stated, say so plainly.
 - Do not start the thesis with "The article", "The author", "This piece", "This essay" or similar throat-clearing. Start with the idea itself.
 
@@ -306,9 +307,9 @@ export async function POST(req: Request) {
   const summary: Summary = {
     sourceId: id,
     thesis: output.thesis,
-    paragraphs: output.paragraphs,
+    paragraphs: cleanProseArray(output.paragraphs),
     memorableQuote: output.memorableQuote,
-    beginnerExplanation: output.beginnerExplanation,
+    beginnerExplanation: cleanProseArray(output.beginnerExplanation),
     lang: targetLang,
   };
   const takeaways: Takeaway[] = output.takeaways.map((t, i) => ({
@@ -356,6 +357,33 @@ function prettifyUrl(url: string): string {
     if (last) return last.replace(/[-_]/g, " ").replace(/\.[a-z]+$/i, "");
     return u.hostname;
   } catch { return url.slice(0, 80); }
+}
+
+/* Defensive cleanup for `paragraphs` / `beginnerExplanation` arrays.
+   When Claude summarizes a structured article, it sometimes emits the
+   source's section headings ("冲刺", "Planner", "完成") as their own
+   array items, and starts the next entry with a mid-sentence comma —
+   the rendered UI then breaks each into its own <p>. Two passes:
+
+     1. If an entry starts with mid-sentence punctuation, merge it
+        into the previous entry (it's clearly a continuation).
+     2. Drop entries shorter than 20 characters that are obviously
+        heading-like (no real prose is that short).
+*/
+function cleanProseArray(arr: string[]): string[] {
+  const CONT = /^[，、,；;：:。.！!？?]/;
+  const out: string[] = [];
+  for (const raw of arr) {
+    const s = (raw ?? "").trim();
+    if (!s) continue;
+    if (out.length > 0 && CONT.test(s)) {
+      out[out.length - 1] = (out[out.length - 1] + s).replace(/\s+/g, " ").trim();
+      continue;
+    }
+    if (s.length < 20) continue;
+    out.push(s);
+  }
+  return out;
 }
 
 function pickHue(type: SourceType): number {
