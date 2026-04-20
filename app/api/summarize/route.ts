@@ -265,7 +265,7 @@ export async function POST(req: Request) {
   /* Fetch the source */
   let fetched;
   try {
-    fetched = await fetchPageText(body.url);
+    fetched = await fetchPageText(body.url, { lang: targetLang });
   } catch (err) {
     if (err instanceof FetchError) return jsonError(err.status, err.message);
     return jsonError(502, "Could not retrieve the source URL.");

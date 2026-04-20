@@ -1,11 +1,16 @@
 import "server-only";
+import { extractVideoId, fetchYouTubeTranscript, isYouTubeUrl } from "./fetch-youtube";
 
 /* Server-only utility: fetch a URL and return readable text.
    Naive HTML→text extraction (sufficient for typical articles, podcasts'
    show-notes pages, blog posts). For SPAs requiring JS execution this
    will return an empty shell — that's an acceptable failure mode for the
    MVP; a future upgrade can swap in Jina Reader, Mercury, or a headless
-   browser without changing the surface. */
+   browser without changing the surface.
+
+   YouTube URLs route through fetch-youtube.ts (transcript via captions
+   track) — their watch pages are pure JS shells that scrape to nothing
+   useful otherwise. */
 
 const MAX_BYTES = 5 * 1024 * 1024;     /* 5 MB hard cap */
 const MAX_CHARS = 25_000;              /* truncate text fed to the model */
@@ -76,10 +81,21 @@ function decodeText(s: string): string {
 
 export type Fetched = { url: string; title?: string; text: string };
 
-export async function fetchPageText(rawUrl: string): Promise<Fetched> {
+export async function fetchPageText(rawUrl: string, opts?: { lang?: "en" | "zh" }): Promise<Fetched> {
   const url = rawUrl.trim();
   if (!isSafeUrl(url)) {
     throw new FetchError("URL is not allowed (must be http(s) and not point to a private host).", 400);
+  }
+
+  if (isYouTubeUrl(url)) {
+    const videoId = extractVideoId(url);
+    if (!videoId) {
+      throw new FetchError(
+        "This looks like a YouTube playlist or channel — paste a single video URL instead.",
+        422,
+      );
+    }
+    return fetchYouTubeTranscript(videoId, opts?.lang ?? "en");
   }
 
   const controller = new AbortController();
