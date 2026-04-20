@@ -20,6 +20,25 @@ export class FetchError extends Error {
   constructor(message: string, public readonly status = 400) { super(message); }
 }
 
+/* Hosts that ship JS shells without scrapeable content — pasting one
+   of these into Mindleaf today returns a useless "page is mostly nav"
+   summary. We refuse them up front with a message that points the user
+   at something that will work. (YouTube is handled separately by
+   fetch-youtube.ts via the captions track, so it's NOT in this list.) */
+const UNSUPPORTED_HOSTS = new Set([
+  "open.spotify.com", "spotify.com",
+  "podcasts.apple.com", "music.apple.com",
+  "pca.st", "pocketcasts.com",
+  "overcast.fm",
+  "castbox.fm",
+]);
+
+function isUnsupportedHost(url: string): boolean {
+  try {
+    return UNSUPPORTED_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch { return false; }
+}
+
 /* Best-effort SSRF block. Not bulletproof (no DNS resolution, no IPv6 range
    parsing) but rejects the obvious local/private targets a careless paste
    might hit. Production should resolve hostnames and check the IP. */
@@ -96,6 +115,13 @@ export async function fetchPageText(rawUrl: string, opts?: { lang?: "en" | "zh" 
       );
     }
     return fetchYouTubeTranscript(videoId, opts?.lang ?? "en");
+  }
+
+  if (isUnsupportedHost(url)) {
+    throw new FetchError(
+      "Podcast apps like Spotify and Apple Podcasts don't expose transcripts. Try the show's own website (Substack, Lex Fridman, etc.) — anything with full show notes works.",
+      422,
+    );
   }
 
   const controller = new AbortController();
