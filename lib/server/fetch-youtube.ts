@@ -40,11 +40,12 @@ export type FetchedYouTube = { url: string; title: string; text: string };
 
 /* Reuse one Innertube session per cold start — the lib does heavy
    lifting on first creation (session data, player JS) and is safe
-   to share across requests. */
+   to share across requests. We let it retrieve the player by default;
+   skipping it broke transcript fetching for some videos. */
 let cachedClient: Innertube | null = null;
 async function client(): Promise<Innertube> {
   if (cachedClient) return cachedClient;
-  cachedClient = await Innertube.create({ retrieve_player: false });
+  cachedClient = await Innertube.create();
   return cachedClient;
 }
 
@@ -87,14 +88,13 @@ export async function fetchYouTubeTranscript(
   const title = (info.basic_info?.title ?? "").trim() || `YouTube video ${videoId}`;
   const description = (info.basic_info?.short_description ?? "").trim();
 
-  /* Pull transcript. Try the user's preferred language first; fall
-     back to whatever default the lib hands us. */
+  /* Pull transcript. youtubei.js throws different errors for
+     "no transcript exists" vs "transcript fetch failed" — keep the
+     match tight so a transient network blip doesn't get reported as
+     "no captions" when the video clearly has them. */
   let transcriptText = "";
   try {
     const transcript = await info.getTranscript() as TranscriptInfo;
-    /* The lib exposes language switching when multiple tracks exist —
-       most videos have one or two, and the default is usually the
-       creator's language (manual) which is what we want anyway. */
     const segments = transcript.transcript?.content?.body?.initial_segments ?? [];
     transcriptText = segments
       .map(s => s.snippet?.text ?? "")
@@ -103,15 +103,22 @@ export async function fetchYouTubeTranscript(
       .trim();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (/transcript|caption|disabled/i.test(msg)) {
+    /* Always log so we can see the real youtubei.js message in Vercel
+       Function Logs — the friendly mapping below hides the cause. */
+    console.error(`[fetchYouTubeTranscript] ${videoId}:`, msg);
+    /* Tight match — only the lib's specific "no transcript" sentinels. */
+    if (/no transcript|transcript.*not.*available|transcripts.*disabled/i.test(msg)) {
       throw new FetchError(
         "This video has no transcript or captions — try one with subtitles enabled.", 422
       );
     }
-    throw new FetchError(`Could not load transcript: ${msg}`, 502);
+    throw new FetchError(`Transcript fetch failed: ${msg.slice(0, 200)}`, 502);
   }
 
   if (transcriptText.length < 50) {
+    /* getTranscript() didn't throw but returned nothing — log raw
+       state so we can debug. */
+    console.error(`[fetchYouTubeTranscript] ${videoId}: empty transcript text`);
     throw new FetchError(
       "This video's transcript was empty — try a different video.", 422
     );
