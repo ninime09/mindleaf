@@ -38,7 +38,10 @@ export function extractVideoId(url: string): string | null {
 export type FetchedYouTube = { url: string; title: string; text: string };
 
 const FETCH_TIMEOUT_MS = 15_000;
-const MAX_CHARS = 25_000;
+/* 150k chars ≈ 37k tokens — covers a 2-hour video transcript with
+   headroom. Sonnet 4.6 takes 1M context so we have plenty of room
+   below; the limit is just a runaway-cost guard. */
+const MAX_CHARS = 150_000;
 
 async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -135,7 +138,10 @@ export async function fetchYouTubeTranscript(
   const title = `YouTube video ${videoId}`;
   const header = `Title: ${title}\n--- TRANSCRIPT ---\n`;
   let text = header + transcriptText;
-  if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS);
+  if (text.length > MAX_CHARS) {
+    console.warn(`[fetchYouTubeTranscript] ${videoId}: transcript truncated from ${text.length} to ${MAX_CHARS} chars`);
+    text = text.slice(0, MAX_CHARS);
+  }
 
   return {
     url: `https://www.youtube.com/watch?v=${videoId}`,

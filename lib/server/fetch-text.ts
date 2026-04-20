@@ -12,8 +12,11 @@ import { extractVideoId, fetchYouTubeTranscript, isYouTubeUrl } from "./fetch-yo
    track) — their watch pages are pure JS shells that scrape to nothing
    useful otherwise. */
 
-const MAX_BYTES = 5 * 1024 * 1024;     /* 5 MB hard cap */
-const MAX_CHARS = 25_000;              /* truncate text fed to the model */
+const MAX_BYTES = 8 * 1024 * 1024;     /* 8 MB hard cap on the raw download */
+/* 150k chars ≈ 37k tokens — covers a long-form essay or full
+   chapter. Sonnet 4.6 has 1M context so this is just a runaway-cost
+   guard, not a model-capacity ceiling. */
+const MAX_CHARS = 150_000;
 const FETCH_TIMEOUT_MS = 12_000;
 
 export class FetchError extends Error {
@@ -181,7 +184,11 @@ export async function fetchPageText(rawUrl: string, opts?: { lang?: "en" | "zh" 
   const raw = new TextDecoder("utf-8", { fatal: false }).decode(buf);
 
   const title = isHtml ? extractTitle(raw) : undefined;
-  const text = (isHtml ? htmlToText(raw) : raw.replace(/\s+/g, " ").trim()).slice(0, MAX_CHARS);
+  const fullText = isHtml ? htmlToText(raw) : raw.replace(/\s+/g, " ").trim();
+  if (fullText.length > MAX_CHARS) {
+    console.warn(`[fetchPageText] ${url}: text truncated from ${fullText.length} to ${MAX_CHARS} chars`);
+  }
+  const text = fullText.slice(0, MAX_CHARS);
 
   if (text.length < 80) {
     throw new FetchError("Source page is too short or could not be parsed as text.", 422);
