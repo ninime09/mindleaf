@@ -62,7 +62,13 @@ NEXT_PUBLIC_SUPABASE_URL       = https://xxxxx.supabase.co   (from prod project)
 NEXT_PUBLIC_SUPABASE_ANON_KEY  = eyJ...                       (from prod project)
 SUPABASE_SERVICE_ROLE_KEY      = eyJ...                       (from prod project)
 MINDLEAF_SUMMARIES_PER_MONTH   = 5
+SUPADATA_API_KEY               = sd_...                       (from supadata.ai — for YouTube)
 ```
+
+**SUPADATA_API_KEY** unlocks YouTube transcript ingestion. Without
+it, YouTube URLs return a clean "not configured" error (everything
+else still works). Sign up at [supadata.ai](https://supadata.ai),
+the free tier is 100 transcripts/month — enough for early users.
 
 Click **Deploy**. First build takes ~2 min. You'll get a URL like
 `mindleaf-abc123.vercel.app`.

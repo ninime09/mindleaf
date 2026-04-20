@@ -1,18 +1,17 @@
 import "server-only";
-import { Innertube } from "youtubei.js";
 import { FetchError } from "./fetch-text";
 
-/* YouTube transcript extractor.
+/* YouTube transcript extractor — calls Supadata's transcript API.
 
-   Uses youtubei.js — the maintained JS port of the InnerTube protocol
-   yt-dlp speaks. We were rolling our own multi-client request flow,
-   but YouTube tightened the bot detection on every public InnerTube
-   key + client we tried (iOS, TVHTML5, Android all 400'd from
-   datacenter IPs). Maintaining that fight in-house is a losing game;
-   youtubei.js absorbs it and we keep our code tiny.
+   Why a third-party service: YouTube actively blocks datacenter IPs
+   (Vercel, AWS, etc.) with bot detection that no public InnerTube
+   client / API key combo currently bypasses. Maintaining a workaround
+   in-house is a losing fight; Supadata runs from IPs YouTube tolerates
+   and gives us a one-call API with a 100/month free tier. Their docs:
+   https://supadata.ai/documentation
 
-   Cold start adds ~500ms (the lib fetches YouTube's session data on
-   first init), which is fine for our once-per-summarize call. */
+   Required env: SUPADATA_API_KEY. Without it, YouTube URLs cleanly
+   return a 500 explaining the server isn't configured for them. */
 
 const YOUTUBE_HOSTS = new Set([
   "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be",
@@ -38,106 +37,109 @@ export function extractVideoId(url: string): string | null {
 
 export type FetchedYouTube = { url: string; title: string; text: string };
 
-/* Reuse one Innertube session per cold start — the lib does heavy
-   lifting on first creation (session data, player JS) and is safe
-   to share across requests. We let it retrieve the player by default;
-   skipping it broke transcript fetching for some videos. */
-let cachedClient: Innertube | null = null;
-async function client(): Promise<Innertube> {
-  if (cachedClient) return cachedClient;
-  cachedClient = await Innertube.create();
-  return cachedClient;
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_CHARS = 25_000;
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-type TranscriptInfo = {
-  transcript?: {
-    content?: {
-      body?: {
-        initial_segments?: { snippet?: { text?: string } }[];
-      };
-    };
-  };
+type SupadataResponse = {
+  content?: string;
+  lang?: string;
+  availableLangs?: string[];
 };
 
 export async function fetchYouTubeTranscript(
   videoId: string, prefLang: "en" | "zh" = "en"
 ): Promise<FetchedYouTube> {
-  let yt: Innertube;
-  try {
-    yt = await client();
-  } catch {
-    throw new FetchError("Could not initialize the YouTube client.", 502);
-  }
-
-  let info;
-  try {
-    info = await yt.getInfo(videoId);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    /* youtubei.js throws InnertubeError with descriptive messages —
-       surface a few common ones cleanly. */
-    if (/login|sign in|bot/i.test(msg)) {
-      throw new FetchError("YouTube blocked the request — try again or use a different video.", 502);
-    }
-    if (/unavailable|private|removed/i.test(msg)) {
-      throw new FetchError("This video is unavailable, private, or has been removed.", 422);
-    }
-    throw new FetchError(`Could not load video: ${msg}`, 502);
-  }
-
-  const title = (info.basic_info?.title ?? "").trim() || `YouTube video ${videoId}`;
-  const description = (info.basic_info?.short_description ?? "").trim();
-
-  /* Pull transcript. youtubei.js throws different errors for
-     "no transcript exists" vs "transcript fetch failed" — keep the
-     match tight so a transient network blip doesn't get reported as
-     "no captions" when the video clearly has them. */
-  let transcriptText = "";
-  try {
-    const transcript = await info.getTranscript() as TranscriptInfo;
-    const segments = transcript.transcript?.content?.body?.initial_segments ?? [];
-    transcriptText = segments
-      .map(s => s.snippet?.text ?? "")
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    /* Always log so we can see the real youtubei.js message in Vercel
-       Function Logs — the friendly mapping below hides the cause. */
-    console.error(`[fetchYouTubeTranscript] ${videoId}:`, msg);
-    /* Tight match — only the lib's specific "no transcript" sentinels. */
-    if (/no transcript|transcript.*not.*available|transcripts.*disabled/i.test(msg)) {
-      throw new FetchError(
-        "This video has no transcript or captions — try one with subtitles enabled.", 422
-      );
-    }
-    throw new FetchError(`Transcript fetch failed: ${msg.slice(0, 200)}`, 502);
-  }
-
-  if (transcriptText.length < 50) {
-    /* getTranscript() didn't throw but returned nothing — log raw
-       state so we can debug. */
-    console.error(`[fetchYouTubeTranscript] ${videoId}: empty transcript text`);
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) {
     throw new FetchError(
-      "This video's transcript was empty — try a different video.", 422
+      "YouTube transcript ingestion isn't configured on this server (missing SUPADATA_API_KEY).",
+      500,
     );
   }
 
-  const header = [
-    `Title: ${title}`,
-    description ? `Description: ${description.slice(0, 1000)}` : null,
-    "--- TRANSCRIPT ---",
-  ].filter(Boolean).join("\n");
+  /* text=true gives us the full transcript as one string; without it
+     we'd get timed segments and have to concat ourselves. The lang
+     hint asks Supadata to prefer a track in that language when the
+     video has multiple. */
+  const url = new URL("https://api.supadata.ai/v1/youtube/transcript");
+  url.searchParams.set("videoId", videoId);
+  url.searchParams.set("text", "true");
+  url.searchParams.set("lang", prefLang);
 
-  let text = `${header}\n${transcriptText}`;
-  const MAX_CHARS = 25_000;
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url.toString(), {
+      headers: { "x-api-key": apiKey },
+    });
+  } catch {
+    throw new FetchError("Could not reach the transcript service.", 502);
+  }
+
+  if (!res.ok) {
+    /* Map common Supadata statuses to user-facing messages. */
+    if (res.status === 404) {
+      throw new FetchError(
+        "This video has no transcript or is unavailable — try one with subtitles enabled.",
+        422,
+      );
+    }
+    if (res.status === 429) {
+      throw new FetchError(
+        "Transcript service is at capacity. Try again in a moment.",
+        503,
+      );
+    }
+    if (res.status === 401 || res.status === 403) {
+      console.error(`[supadata] auth failed (${res.status}) — check SUPADATA_API_KEY`);
+      throw new FetchError(
+        "YouTube ingestion is misconfigured on this server. Try a non-YouTube source.",
+        500,
+      );
+    }
+    /* Surface the body for debugging on Vercel Function Logs. */
+    let body = "";
+    try { body = (await res.text()).slice(0, 300); } catch {}
+    console.error(`[supadata] ${res.status}: ${body}`);
+    throw new FetchError(`Transcript service returned ${res.status}.`, 502);
+  }
+
+  let data: SupadataResponse;
+  try {
+    data = (await res.json()) as SupadataResponse;
+  } catch {
+    throw new FetchError("Transcript service returned invalid JSON.", 502);
+  }
+
+  const transcriptText = (data.content ?? "").trim();
+  if (transcriptText.length < 50) {
+    throw new FetchError(
+      "This video's transcript was empty — try a different video.",
+      422,
+    );
+  }
+
+  /* Claude returns its own `title` field from the structured output, so
+     the placeholder here only matters as a fallback when Claude fails
+     to extract one. The transcript itself almost always carries the
+     title in the first few seconds. */
+  const title = `YouTube video ${videoId}`;
+  const header = `Title: ${title}\n--- TRANSCRIPT ---\n`;
+  let text = header + transcriptText;
   if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS);
 
-  /* prefLang is currently unused — youtubei.js picks the default
-     transcript track and Claude translates as needed. Wired through
-     the signature so future track-selection can plug in. */
-  void prefLang;
-
-  return { url: `https://www.youtube.com/watch?v=${videoId}`, title, text };
+  return {
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    title,
+    text,
+  };
 }
