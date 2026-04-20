@@ -1,5 +1,5 @@
 import type { SummarizeRequest, SummarizeResponse } from "./types";
-import { persistSummarizeResponse } from "./mock";
+import { persistSummarizeResponse } from "./dispatch";
 
 /* Thrown when the route returns 401. Caller (Landing / Workspace
    submit handlers) catches this and routes the user to /sign-in,
@@ -40,6 +40,6 @@ export async function summarize(req: SummarizeRequest): Promise<SummarizeRespons
   }
 
   const data = (await res.json()) as SummarizeResponse;
-  persistSummarizeResponse(data);
+  await persistSummarizeResponse(data);
   return data;
 }

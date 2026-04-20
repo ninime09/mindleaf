@@ -6,28 +6,45 @@ import { getNote, saveNote } from "@/lib/api";
 /* Loads the note for `id` on mount, buffers edits in local state, and
    saves through `saveNote()` 500ms after the user stops typing. Returns
    the current value, a setter for the textarea, and the last-save time
-   so the UI can surface "Saved · just now". */
+   so the UI can surface "Saved · just now".
+
+   Two guards keep us from writing junk into the store:
+   - empty id → no-op (workspace renders this hook before the first source loads)
+   - body unchanged from what we loaded → no save (so the fallback text doesn't
+     get persisted just because the user opened the page) */
 export function useNotes(id: string, fallback: string) {
   const [notes, setNotes] = useState(fallback);
   const [loaded, setLoaded] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const lastSavedBody = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!id) return;
     let cancelled = false;
     getNote(id).then(n => {
       if (cancelled) return;
-      if (n) setNotes(n.body);
+      const body = n?.body ?? fallback;
+      setNotes(body);
+      lastSavedBody.current = body;
       setLoaded(true);
     });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, fallback]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!id || !loaded) return;
+    if (notes === lastSavedBody.current) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      saveNote(id, notes).then(n => setSavedAt(new Date(n.updatedAt)));
+      saveNote(id, notes)
+        .then(n => {
+          lastSavedBody.current = notes;
+          setSavedAt(new Date(n.updatedAt));
+        })
+        .catch(err => {
+          console.error("[useNotes] saveNote failed", err);
+        });
     }, 500);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [notes, loaded, id]);
