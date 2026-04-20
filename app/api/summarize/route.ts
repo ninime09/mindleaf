@@ -239,18 +239,24 @@ export async function POST(req: Request) {
     return jsonError(503, "Mindleaf has hit today's free summary budget. Try again tomorrow.");
   }
 
-  /* Per-user monthly quota — counts every cache miss against the
-     signed-in user's plan. Cache hits above this point are free. */
+  /* Per-user monthly quota — read-only check up front so the user
+     learns they're at limit before we burn time on fetch + Claude. The
+     actual increment happens after the work succeeds (further down)
+     so failed requests don't consume a credit. RLS scopes the SELECT
+     to the current user automatically. */
+  const monthlyLimit = Number(process.env.MINDLEAF_SUMMARIES_PER_MONTH ?? 5);
+  const month = new Date().toISOString().slice(0, 7); // "YYYY-MM"
   if (supabaseClient) {
-    const monthlyLimit = Number(process.env.MINDLEAF_SUMMARIES_PER_MONTH ?? 5);
-    const month = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-    const { data: newCount, error: rpcError } = await supabaseClient
-      .rpc("increment_summarize_quota", { p_month: month });
-    if (rpcError) {
-      console.error("[summarize] quota rpc failed:", rpcError);
+    const { data: quotaRow, error: quotaErr } = await supabaseClient
+      .from("usage_quotas")
+      .select("summarize_count")
+      .eq("month", month)
+      .maybeSingle();
+    if (quotaErr) {
+      console.error("[summarize] quota read failed:", quotaErr);
       return jsonError(500, "Could not verify your monthly quota. Try again.");
     }
-    if ((newCount ?? 0) > monthlyLimit) {
+    if ((quotaRow?.summarize_count ?? 0) >= monthlyLimit) {
       return jsonError(429,
         `You've used your ${monthlyLimit} free summaries for ${month}. Upgrade for more — see /pricing.`
       );
@@ -375,6 +381,22 @@ export async function POST(req: Request) {
 
   /* Persist to disk cache — subsequent identical requests skip Claude. */
   await writeCached(cacheInput, payload);
+
+  /* Charge the user's quota — only after every step succeeded. Fetch
+     errors, Claude errors, and structured-output failures all bail out
+     above without ever touching the counter. The check up top means
+     the user got the 429 if they were already at limit, so an isolated
+     race here can only make us slightly more generous (one extra
+     summary slipping through under high concurrency), never stricter. */
+  if (supabaseClient) {
+    const { error: incErr } = await supabaseClient
+      .rpc("increment_summarize_quota", { p_month: month });
+    if (incErr) {
+      /* Don't fail the response — the work is done, the user got their
+         summary, the counter is one step behind. Log so we notice. */
+      console.error("[summarize] quota increment failed (non-fatal):", incErr);
+    }
+  }
 
   return new Response(JSON.stringify(payload), {
     status: 200,
