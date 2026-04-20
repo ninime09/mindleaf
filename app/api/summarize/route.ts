@@ -189,9 +189,10 @@ export async function POST(req: Request) {
      vars are missing it falls open, and a misconfigured deploy
      shouldn't be the thing that bills your Anthropic account.
      Refuse anonymous calls here too. */
+  let supabaseClient: Awaited<ReturnType<typeof createSupabaseServer>> | null = null;
   if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    const supabase = await createSupabaseServer();
-    const { data: { user } } = await supabase.auth.getUser();
+    supabaseClient = await createSupabaseServer();
+    const { data: { user } } = await supabaseClient.auth.getUser();
     if (!user) {
       return jsonError(401, "Sign in to summarize.");
     }
@@ -224,7 +225,9 @@ export async function POST(req: Request) {
     }
   }
 
-  /* Rate limit + daily budget — only cache misses count. */
+  /* Rate limit + daily budget — only cache misses count. Per-IP belt
+     for cases where one user spams hard from a single address; the
+     real per-user gate is the Supabase quota check below. */
   const ip = clientIp(req);
   const limit = checkAndIncrement(ip);
   if (!limit.ok) {
@@ -234,6 +237,24 @@ export async function POST(req: Request) {
       });
     }
     return jsonError(503, "Mindleaf has hit today's free summary budget. Try again tomorrow.");
+  }
+
+  /* Per-user monthly quota — counts every cache miss against the
+     signed-in user's plan. Cache hits above this point are free. */
+  if (supabaseClient) {
+    const monthlyLimit = Number(process.env.MINDLEAF_SUMMARIES_PER_MONTH ?? 5);
+    const month = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    const { data: newCount, error: rpcError } = await supabaseClient
+      .rpc("increment_summarize_quota", { p_month: month });
+    if (rpcError) {
+      console.error("[summarize] quota rpc failed:", rpcError);
+      return jsonError(500, "Could not verify your monthly quota. Try again.");
+    }
+    if ((newCount ?? 0) > monthlyLimit) {
+      return jsonError(429,
+        `You've used your ${monthlyLimit} free summaries for ${month}. Upgrade for more — see /pricing.`
+      );
+    }
   }
 
   /* API key check */

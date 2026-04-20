@@ -15,6 +15,28 @@ import { Highlightable } from "@/components/highlightable";
 import { NoteTagEditor } from "@/components/note-tag-editor";
 import { useToast } from "@/components/toast";
 import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
+import { createClient as createSupabase } from "@/lib/supabase/client";
+
+/* Tiny inline hook — true once we've confirmed an active session.
+   Used by CanonicalDetail to swap the demo article into read-only
+   mode (the demo source doesn't exist in the user's Supabase tables,
+   so save/bookmark/archive would silently fail). */
+function useIsAuthed(): boolean {
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createSupabase();
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) setAuthed(!!session);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setAuthed(!!session);
+    });
+    return () => { cancelled = true; sub.subscription.unsubscribe(); };
+  }, []);
+  return authed;
+}
 
 /* Shared bookmark/share/archive wiring for both CanonicalDetail and
    DynamicDetail. Keeps the three top-bar actions in one place. */
@@ -72,9 +94,19 @@ export default function Detail() {
 function CanonicalDetail({ id }: { id: string }) {
   const router = useRouter();
   const { t, lang } = useLang();
-  const { notes, setNotes, savedAt } = useNotes(id, t("det.notes.body"));
+  const isAuthed = useIsAuthed();
+  /* In read-only mode we still let the textarea show the seed note,
+     but useNotes won't try to save anything (id is wiped). */
+  const { notes, setNotes, savedAt } = useNotes(isAuthed ? "" : id, t("det.notes.body"));
   const [activeSection, setActiveSection] = useState<SectionId>("summary");
-  const { bookmarked, archived, onBookmark, onArchive, onShare } = useDetailActions(id);
+  const detailActions = useDetailActions(id);
+  const { onShare } = detailActions;
+  /* When authed, hide bookmark/archive state and no-op the handlers
+     so a hopeful click on the demo doesn't look broken or dirty the DB. */
+  const bookmarked = isAuthed ? false : detailActions.bookmarked;
+  const archived = isAuthed ? false : detailActions.archived;
+  const onBookmark = isAuthed ? () => {} : detailActions.onBookmark;
+  const onArchive = isAuthed ? () => {} : detailActions.onArchive;
 
   const sections: { id: SectionId; label: string }[] = [
     { id: "summary",   label: t("det.sec.summary") },
@@ -127,7 +159,11 @@ function CanonicalDetail({ id }: { id: string }) {
               className="btn btn-ghost btn-icon"
               onClick={onBookmark}
               aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"}
-              style={bookmarked ? { color: "var(--accent-deep)" } : undefined}
+              disabled={isAuthed}
+              style={{
+                ...(bookmarked ? { color: "var(--accent-deep)" } : {}),
+                ...(isAuthed ? { opacity: 0.4, cursor: "not-allowed" } : {}),
+              }}
             >
               <Icon name="bookmark" size={14} style={{ fill: bookmarked ? "currentColor" : "none" }}/>
             </button>
@@ -138,12 +174,39 @@ function CanonicalDetail({ id }: { id: string }) {
               className="btn btn-ghost btn-icon"
               onClick={onArchive}
               aria-label={archived ? "Unarchive" : "Archive"}
-              style={archived ? { color: "var(--ink-900)" } : undefined}
+              disabled={isAuthed}
+              style={{
+                ...(archived ? { color: "var(--ink-900)" } : {}),
+                ...(isAuthed ? { opacity: 0.4, cursor: "not-allowed" } : {}),
+              }}
             >
               <Icon name="archive" size={14}/>
             </button>
           </div>
         </div>
+        {isAuthed && (
+          <div style={{
+            maxWidth: 1400, margin: "10px auto 0",
+            padding: "10px 14px",
+            display: "flex", alignItems: "center", gap: 12,
+            borderRadius: 14,
+            background: "rgba(255,255,255,0.55)",
+            backdropFilter: "blur(20px) saturate(160%)",
+            WebkitBackdropFilter: "blur(20px) saturate(160%)",
+            border: "1px solid rgba(255,255,255,0.7)",
+            fontSize: 12.5,
+          }}>
+            <Icon name="sparkle" size={13} style={{ color: "var(--accent-deep)", flexShrink: 0 }}/>
+            <span style={{ color: "var(--ink-700)" }}>{t("demo.banner.text")}</span>
+            <button
+              onClick={() => router.push("/workspace")}
+              className="btn btn-ghost"
+              style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 12, color: "var(--accent-deep)", fontWeight: 550 }}
+            >
+              {t("demo.banner.cta")}
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{
@@ -384,6 +447,7 @@ function CanonicalDetail({ id }: { id: string }) {
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
+              readOnly={isAuthed}
               style={{
                 width: "100%", minHeight: 200,
                 background: "rgba(255,255,255,0.55)",
@@ -396,9 +460,10 @@ function CanonicalDetail({ id }: { id: string }) {
                 fontFamily: "var(--font-display)", fontSize: 17, lineHeight: 1.7,
                 color: "var(--ink-900)", resize: "vertical", outline: "none",
                 letterSpacing: "-0.005em",
+                ...(isAuthed ? { cursor: "not-allowed", opacity: 0.7 } : {}),
               }}
             />
-            <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", ...(isAuthed ? { opacity: 0.5 } : {}) }}>
               <span style={{ fontSize: 11.5, color: "var(--ink-500)", marginRight: 4 }}>{t("det.notes.addTag")}</span>
               <Tag color="blue">attention</Tag>
               <Tag color="sand">craft</Tag>

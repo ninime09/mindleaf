@@ -170,3 +170,46 @@ create policy "review_owner_select" on public.review_states for select using (au
 create policy "review_owner_insert" on public.review_states for insert with check (auth.uid() = user_id);
 create policy "review_owner_update" on public.review_states for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "review_owner_delete" on public.review_states for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- 8. usage_quotas — per-user monthly summarize counter (Phase F.3)
+-- One row per (user, month). The route handler increments via the
+-- security-definer RPC below; clients only ever read their own row.
+-- ============================================================
+create table if not exists public.usage_quotas (
+  user_id          uuid not null references auth.users(id) on delete cascade,
+  month            text not null,                -- "YYYY-MM"
+  summarize_count  int  not null default 0,
+  primary key (user_id, month)
+);
+
+alter table public.usage_quotas enable row level security;
+
+drop policy if exists "usage_quotas_owner_select" on public.usage_quotas;
+create policy "usage_quotas_owner_select" on public.usage_quotas
+  for select using (auth.uid() = user_id);
+-- No insert/update/delete policies — only the security-definer RPC writes.
+
+-- Atomic increment. Returns the new count for the current user
+-- + given month. The route handler compares this against the
+-- per-month limit (env var MINDLEAF_SUMMARIES_PER_MONTH).
+create or replace function public.increment_summarize_quota(p_month text)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_count int;
+begin
+  insert into public.usage_quotas (user_id, month, summarize_count)
+  values (auth.uid(), p_month, 1)
+  on conflict (user_id, month)
+  do update set summarize_count = public.usage_quotas.summarize_count + 1
+  returning summarize_count into new_count;
+  return new_count;
+end;
+$$;
+
+revoke all on function public.increment_summarize_quota(text) from public, anon;
+grant execute on function public.increment_summarize_quota(text) to authenticated;

@@ -366,6 +366,11 @@ export const DICT = {
     en: "The examples in the talk range from iOS's Focus modes (calm) to the average team chat app's unread badge (anxious). The difference is rarely about features — it's about defaults and whose time matters.",
     zh: "演讲里举的例子，从 iOS 的专注模式（从容），到大多数团队聊天工具的未读红点（焦虑）。差别很少在功能本身——而是默认怎么设，以及到底谁的时间更重要。",
   },
+  "demo.banner.text":  {
+    en: "This is a sample article. Bookmarks, archive, and notes are read-only here.",
+    zh: "这是一篇示例文章。收藏、归档、笔记在这里是只读的。",
+  },
+  "demo.banner.cta":   { en: "Add your own →", zh: "去添加你自己的 →" },
   "det.notes.eyebrow": { en: "Your personal notes", zh: "你的私人笔记" },
   "det.notes.saved":   { en: "autosaved · just now", zh: "已自动保存 · 刚刚" },
   "det.notes.h":       { en: "What this means for you.", zh: "这对你来说意味着什么。" },
