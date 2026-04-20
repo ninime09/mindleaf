@@ -75,51 +75,114 @@ type PlayerResponse = {
   playabilityStatus?: { status?: string; reason?: string };
 };
 
-/* Public InnerTube key for the Android client — same constant the
-   official YouTube Android app uses, hardcoded in the APK. Not a
-   secret; it's been the same for years and is the standard approach
-   for tools like yt-dlp. The Android client context bypasses the
-   "sign in to confirm you're not a bot" wall that YouTube throws at
-   datacenter IPs (Vercel, AWS, etc.) when scraping the watch page. */
-const INNERTUBE_KEY = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
-const INNERTUBE_URL = `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}&prettyPrint=false`;
+/* InnerTube clients we try, in order. YouTube treats different clients
+   with different leniency — Android has been getting harder to spoof
+   from datacenter IPs through 2025/2026, while iOS and TVHTML5 (the
+   embedded-player client used by smart TVs) still pass. Each entry has
+   its own host + API key + context shape; these constants are public
+   (hardcoded in YouTube's own apps, also used by yt-dlp). */
+type InnertubeClient = {
+  name: string;
+  host: string;
+  apiKey: string;
+  userAgent: string;
+  context: Record<string, unknown>;
+};
 
-async function fetchPlayerResponse(videoId: string): Promise<PlayerResponse> {
-  const body = {
+const INNERTUBE_CLIENTS: InnertubeClient[] = [
+  {
+    name: "IOS",
+    host: "youtubei.googleapis.com",
+    apiKey: "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
+    userAgent: "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)",
+    context: {
+      client: {
+        clientName: "IOS",
+        clientVersion: "19.45.4",
+        deviceMake: "Apple",
+        deviceModel: "iPhone16,2",
+        osName: "iPhone",
+        osVersion: "18.1.0.22B83",
+        hl: "en",
+        gl: "US",
+      },
+    },
+  },
+  {
+    name: "TVHTML5",
+    host: "www.youtube.com",
+    apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+    userAgent: "Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15",
+    context: {
+      client: {
+        clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+        clientVersion: "2.0",
+        hl: "en",
+        gl: "US",
+      },
+      thirdParty: {
+        embedUrl: "https://www.youtube.com/",
+      },
+    },
+  },
+  {
+    name: "ANDROID",
+    host: "www.youtube.com",
+    apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+    userAgent: "com.google.android.youtube/19.45.36 (Linux; U; Android 14) gzip",
     context: {
       client: {
         clientName: "ANDROID",
-        clientVersion: "19.09.37",
-        androidSdkVersion: 30,
+        clientVersion: "19.45.36",
+        androidSdkVersion: 34,
         hl: "en",
         gl: "US",
-        userAgent: "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+        userAgent: "com.google.android.youtube/19.45.36 (Linux; U; Android 14) gzip",
       },
     },
-    videoId,
-    /* params=CgIQBg== unlocks the captions track on the Android client.
-       Without it, captionTracks comes back missing for many videos. */
-    params: "CgIQBg==",
-  };
-  let res: Response;
-  try {
-    res = await fetchWithTimeout(INNERTUBE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
-      },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new FetchError("Could not reach YouTube.", 502);
+  },
+];
+
+async function fetchPlayerResponse(videoId: string): Promise<PlayerResponse> {
+  let lastError: Error | null = null;
+  for (const client of INNERTUBE_CLIENTS) {
+    try {
+      const url = `https://${client.host}/youtubei/v1/player?key=${client.apiKey}&prettyPrint=false`;
+      const body = { context: client.context, videoId };
+      const res = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": client.userAgent,
+          "X-YouTube-Client-Name": client.name === "IOS" ? "5" : client.name === "TVHTML5" ? "85" : "3",
+          "X-YouTube-Client-Version": (client.context.client as { clientVersion: string }).clientVersion,
+          "Origin": "https://www.youtube.com",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        lastError = new FetchError(`YouTube ${client.name} client returned ${res.status}.`, 502);
+        continue;
+      }
+      const player = (await res.json()) as PlayerResponse;
+      /* Some clients respond 200 OK but with playabilityStatus=ERROR;
+         that's not really a "success" for our purposes. Try the next
+         client unless we got captions. */
+      const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+      const status = player.playabilityStatus?.status;
+      if (tracks.length === 0 && status && status !== "OK") {
+        lastError = new FetchError(
+          `YouTube ${client.name} client: ${player.playabilityStatus?.reason || status}`, 422
+        );
+        continue;
+      }
+      return player;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue;
+    }
   }
-  if (!res.ok) throw new FetchError(`YouTube returned ${res.status}.`, 502);
-  try {
-    return (await res.json()) as PlayerResponse;
-  } catch {
-    throw new FetchError("Could not parse YouTube's player data.", 502);
-  }
+  throw lastError ?? new FetchError("All YouTube clients failed.", 502);
 }
 
 export async function fetchYouTubeTranscript(
