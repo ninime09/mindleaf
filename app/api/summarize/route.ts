@@ -9,6 +9,7 @@ import type {
 import { fetchPageText, FetchError } from "@/lib/server/fetch-text";
 import { checkAndIncrement, clientIp } from "@/lib/server/rate-limit";
 import { readCached, writeCached } from "@/lib/server/response-cache";
+import { createClient as createSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -184,6 +185,18 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  /* Defense in depth — middleware already gates this route, but if env
+     vars are missing it falls open, and a misconfigured deploy
+     shouldn't be the thing that bills your Anthropic account.
+     Refuse anonymous calls here too. */
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const supabase = await createSupabaseServer();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return jsonError(401, "Sign in to summarize.");
+    }
+  }
+
   /* Validate body FIRST so we can use it for cache lookup. Rate limit
      after cache check — cache hits are free and shouldn't count. */
   let body: z.infer<typeof Body>;

@@ -31,4 +31,4 @@ export {
   __resetMockStore,
 } from "./mock";
 
-export { summarize } from "./summarize-client";
+export { summarize, AuthRequiredError } from "./summarize-client";

@@ -6,7 +6,7 @@ import { useLang } from "@/lib/i18n/context";
 import { Icon, Logo } from "@/components/icons";
 import { LangSwitch, Orb, Segmented, Tag, Thumb } from "@/components/primitives";
 import { Magnetic, Reveal, Spotlight, TiltCard } from "@/components/interactions";
-import { summarize } from "@/lib/api";
+import { AuthRequiredError, summarize } from "@/lib/api";
 import { AuthMenu } from "@/components/auth-menu";
 import { useToast } from "@/components/toast";
 
@@ -58,6 +58,10 @@ export default function Landing() {
       const res = await summarize({ url: value, type: mode, lang });
       router.push(`/read/${res.source.id}`);
     } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        router.push("/sign-in?next=/");
+        return;
+      }
       const message = err instanceof Error ? err.message : "Something went wrong.";
       setSubmitError(message);
       setSubmitting(false);

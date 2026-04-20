@@ -1,6 +1,13 @@
 import type { SummarizeRequest, SummarizeResponse } from "./types";
 import { persistSummarizeResponse } from "./mock";
 
+/* Thrown when the route returns 401. Caller (Landing / Workspace
+   submit handlers) catches this and routes the user to /sign-in,
+   carrying their current path as ?next=. */
+export class AuthRequiredError extends Error {
+  constructor() { super("auth_required"); this.name = "AuthRequiredError"; }
+}
+
 /* Calls the /api/summarize route handler (which talks to Claude) and
    persists the response to localStorage so the rest of the app can read
    it via the existing get* functions. Same SummarizeRequest/Response
@@ -15,6 +22,10 @@ export async function summarize(req: SummarizeRequest): Promise<SummarizeRespons
     });
   } catch {
     throw new Error("Network error — could not reach the summarize endpoint.");
+  }
+
+  if (res.status === 401) {
+    throw new AuthRequiredError();
   }
 
   if (!res.ok) {

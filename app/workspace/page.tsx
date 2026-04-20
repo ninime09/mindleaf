@@ -8,8 +8,8 @@ import { LangSwitch, Segmented } from "@/components/primitives";
 import { NoteTagEditor } from "@/components/note-tag-editor";
 import { savedLabel, useNotes } from "@/lib/hooks/use-notes";
 import {
-  getHighlights, getNote, getReviewItems, getSummary, getTakeaways,
-  listSources, setNoteTags, summarize,
+  AuthRequiredError, getHighlights, getNote, getReviewItems, getSummary,
+  getTakeaways, listSources, setNoteTags, summarize,
   type Highlight, type ReviewItem, type Source, type SourceType, type Summary, type Takeaway,
 } from "@/lib/api";
 
@@ -72,6 +72,10 @@ export default function Workspace() {
       const res = await summarize({ url: value, type: sourceType, lang });
       router.push(`/read/${res.source.id}`);
     } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        router.push("/sign-in?next=/workspace");
+        return;
+      }
       setSubmitError(err instanceof Error ? err.message : "Something went wrong.");
       setSubmitting(false);
     }
