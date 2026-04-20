@@ -69,50 +69,70 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
 
 export type FetchedYouTube = { url: string; title: string; text: string };
 
-export async function fetchYouTubeTranscript(
-  videoId: string, prefLang: "en" | "zh" = "en"
-): Promise<FetchedYouTube> {
-  const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=en`;
+type PlayerResponse = {
+  captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
+  videoDetails?: { title?: string; shortDescription?: string };
+  playabilityStatus?: { status?: string; reason?: string };
+};
 
+/* Public InnerTube key for the Android client — same constant the
+   official YouTube Android app uses, hardcoded in the APK. Not a
+   secret; it's been the same for years and is the standard approach
+   for tools like yt-dlp. The Android client context bypasses the
+   "sign in to confirm you're not a bot" wall that YouTube throws at
+   datacenter IPs (Vercel, AWS, etc.) when scraping the watch page. */
+const INNERTUBE_KEY = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w";
+const INNERTUBE_URL = `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_KEY}&prettyPrint=false`;
+
+async function fetchPlayerResponse(videoId: string): Promise<PlayerResponse> {
+  const body = {
+    context: {
+      client: {
+        clientName: "ANDROID",
+        clientVersion: "19.09.37",
+        androidSdkVersion: 30,
+        hl: "en",
+        gl: "US",
+        userAgent: "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+      },
+    },
+    videoId,
+    /* params=CgIQBg== unlocks the captions track on the Android client.
+       Without it, captionTracks comes back missing for many videos. */
+    params: "CgIQBg==",
+  };
   let res: Response;
   try {
-    res = await fetchWithTimeout(watchUrl, {
+    res = await fetchWithTimeout(INNERTUBE_URL, {
+      method: "POST",
       headers: {
-        /* A real-looking UA is necessary — YouTube hands the bot UA a
-           cookie-consent wall instead of the watch page. */
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/json",
+        "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
       },
+      body: JSON.stringify(body),
     });
   } catch {
     throw new FetchError("Could not reach YouTube.", 502);
   }
   if (!res.ok) throw new FetchError(`YouTube returned ${res.status}.`, 502);
-  const html = await res.text();
-
-  /* The player response is embedded as a JS literal:
-       var ytInitialPlayerResponse = { ... };
-     We don't try to parse JS; we extract the JSON object that follows
-     the `=` and feed it to JSON.parse. The closing `};` is consistent
-     across all current YouTube variants. */
-  const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]*?\});\s*(?:var\s|<\/script>)/);
-  if (!match) {
-    throw new FetchError("YouTube page didn't expose the expected player data — try a different video URL.", 502);
-  }
-
-  let player: {
-    captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
-    videoDetails?: { title?: string; shortDescription?: string };
-    playabilityStatus?: { status?: string; reason?: string };
-  };
   try {
-    player = JSON.parse(match[1]);
+    return (await res.json()) as PlayerResponse;
   } catch {
     throw new FetchError("Could not parse YouTube's player data.", 502);
   }
+}
 
+export async function fetchYouTubeTranscript(
+  videoId: string, prefLang: "en" | "zh" = "en"
+): Promise<FetchedYouTube> {
+  const player = await fetchPlayerResponse(videoId);
+
+  /* Only treat truly fatal statuses as fatal — LOGIN_REQUIRED on
+     captions-only flows is sometimes a false alarm because we already
+     have the captionTracks. Let the next check decide. */
   const status = player.playabilityStatus?.status;
-  if (status && status !== "OK") {
+  const fatal = new Set(["ERROR", "UNPLAYABLE", "LIVE_STREAM_OFFLINE"]);
+  if (status && fatal.has(status)) {
     throw new FetchError(
       `This video isn't playable (${player.playabilityStatus?.reason || status}).`, 422
     );
@@ -120,6 +140,14 @@ export async function fetchYouTubeTranscript(
 
   const tracks = player.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
   if (tracks.length === 0) {
+    /* Distinguish "video gated" from "no captions" so the user knows
+       which one they hit. */
+    if (status && status !== "OK") {
+      throw new FetchError(
+        `YouTube blocked the captions for this video (${player.playabilityStatus?.reason || status}). Try a different video.`,
+        422
+      );
+    }
     throw new FetchError(
       "This video has no captions or transcript — try one with subtitles enabled.", 422
     );
