@@ -43,6 +43,7 @@ export function AuthMenu({ hideSignedOut }: Props) {
       });
       unsub = () => sub.subscription.unsubscribe();
     } catch {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoaded(true);
     }
 

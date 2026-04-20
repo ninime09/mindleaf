@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLang } from "@/lib/i18n/context";
@@ -16,6 +16,29 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+
+  /* Surface auth errors that came back from /auth/callback (e.g. an
+     expired magic link). Reading window.location avoids needing to
+     wrap the page in a Suspense boundary for useSearchParams. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (!err) return;
+    const message = err === "missing_code"
+      ? (lang === "zh" ? "登录链接缺少必要参数。请重新发送。" : "Sign-in link was missing its code. Send a new one.")
+      : err.includes("expired") || err.includes("invalid")
+        ? (lang === "zh"
+            ? "登录链接已失效（一小时后过期，或邮件客户端可能预读了一次）。请重新发送。"
+            : "That link has expired or already been used. Send a new one.")
+        : err;
+    push(message, { kind: "error", icon: "bolt" });
+    /* Strip the error from the URL so a refresh doesn't re-toast. */
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("error");
+    window.history.replaceState(null, "", clean.toString());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* Lazily create the client inside handlers — keeps build-time
      pre-render from blowing up before env vars are set. */
